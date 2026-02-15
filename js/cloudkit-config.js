@@ -6,8 +6,7 @@
 export const CK_CONFIG = {
   containerIdentifier: 'iCloud.com.soundsolutionsllc.tourcal',
   apiTokenAuth: {
-    // Replace with actual API token from CloudKit Dashboard
-    apiToken: 'REPLACE_WITH_API_TOKEN',
+    apiToken: 'ca655afb03eea6e5beb7d3745f54160e39c57925cb82b7c45ee6cd9b71e8bd1e',
     persist: true,
     signInButton: {
       id: 'apple-sign-in-button',
