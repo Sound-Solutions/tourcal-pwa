@@ -1,0 +1,122 @@
+// Schedule View - Events grouped by date
+
+import { tourService } from '../services/tour-service.js';
+import { eventService } from '../services/event-service.js';
+import { formatDateShort, formatDateLong, formatTime } from '../models/formatters.js';
+import { setupPullToRefresh } from '../components/pull-to-refresh.js';
+
+export async function renderScheduleView() {
+  const content = document.getElementById('app-content');
+  const tour = tourService.activeTour;
+
+  if (!tour) {
+    window.location.hash = '#/tours';
+    return;
+  }
+
+  content.innerHTML = `
+    <div class="loading-container">
+      <div class="spinner"></div>
+      <span class="loading-text">Loading schedule...</span>
+    </div>
+  `;
+
+  try {
+    const events = await eventService.fetchEvents(tour);
+    _render(content, events, tour);
+  } catch (e) {
+    console.error('Error loading schedule:', e);
+    content.innerHTML = `
+      <div class="empty-state">
+        <div class="empty-state-icon">&#9888;</div>
+        <h2 class="empty-state-title">Error Loading Schedule</h2>
+        <p class="empty-state-text">${e.message || 'Something went wrong.'}</p>
+      </div>
+    `;
+  }
+}
+
+function _render(container, events, tour) {
+  // Filter artist-only events based on role
+  const role = tour.role;
+  const filtered = role === 'Artist'
+    ? events
+    : events.filter(e => !e.isArtistOnly);
+
+  if (filtered.length === 0) {
+    container.innerHTML = `
+      <div class="empty-state">
+        <div class="empty-state-icon">&#128197;</div>
+        <h2 class="empty-state-title">No Events</h2>
+        <p class="empty-state-text">No events scheduled yet for this tour.</p>
+      </div>
+    `;
+    return;
+  }
+
+  const groups = eventService.groupByDate(filtered);
+  const today = new Date().toISOString().split('T')[0];
+
+  let html = '<div class="schedule-view">';
+  html += '<div id="ptr-zone" class="ptr-indicator"><div class="ptr-spinner"></div></div>';
+
+  // Find the nearest upcoming date to auto-scroll to
+  let scrollTarget = null;
+
+  for (const [dateKey, dayEvents] of groups) {
+    const isToday = dateKey === today;
+    const isPast = dateKey < today;
+    if (!scrollTarget && dateKey >= today) scrollTarget = dateKey;
+
+    html += `
+      <div class="date-header" id="date-${dateKey}" ${isPast ? 'style="opacity: 0.6"' : ''}>
+        ${isToday ? 'Today &middot; ' : ''}${formatDateLong(new Date(dateKey + 'T12:00:00'))}
+      </div>
+    `;
+
+    for (const event of dayEvents) {
+      const tz = event.timeZoneIdentifier;
+      const timeStr = event.startDate ? formatTime(event.startDate, tz) : '';
+
+      html += `
+        <div class="event-card" data-event-id="${event.recordName}">
+          <a class="event-card-content" href="#/event/${event.recordName}">
+            <div class="event-summary">
+              ${_esc(event.summary)}
+              ${event.isArtistOnly ? '<span class="event-badge-artist">Artist</span>' : ''}
+            </div>
+            <div class="event-details">
+              ${event.venue ? `<span class="event-venue">${_esc(event.venue)}</span>` : ''}
+              ${event.city ? `<span class="event-city">${_esc(event.city)}</span>` : ''}
+            </div>
+            ${timeStr ? `<div class="event-time">${timeStr}</div>` : ''}
+          </a>
+        </div>
+      `;
+    }
+  }
+
+  html += '</div>';
+  container.innerHTML = html;
+
+  // Scroll to today or next upcoming
+  if (scrollTarget) {
+    const el = document.getElementById(`date-${scrollTarget}`);
+    if (el) {
+      setTimeout(() => el.scrollIntoView({ behavior: 'auto', block: 'start' }), 50);
+    }
+  }
+
+  // Pull-to-refresh
+  setupPullToRefresh(container, async () => {
+    const events = await eventService.fetchEvents(tour);
+    _render(container, events, tour);
+  });
+}
+
+function _esc(str) {
+  if (!str) return '';
+  const div = document.createElement('div');
+  div.textContent = str;
+  return div.innerHTML;
+}
