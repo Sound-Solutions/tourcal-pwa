@@ -38,6 +38,9 @@
 
 #apple-sign-in-button {
   min-height: 44px;
+  display: flex;
+  justify-content: center;
+  text-align: center;
 }
 
 #apple-sign-in-button > a {
