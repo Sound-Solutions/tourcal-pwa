@@ -57,9 +57,7 @@
 }
 
 .apple-auth-button-text {
-  position: static !important;
-  top: auto !important;
-  left: auto !important;
+  transform: translate(-50%, -50%) !important;
 }
 
 .auth-footer {
