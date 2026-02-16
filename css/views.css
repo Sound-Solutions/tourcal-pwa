@@ -36,15 +36,13 @@
   line-height: 1.4;
 }
 
-#auth-sign-in-button {
+#apple-sign-in-button {
   display: flex;
   justify-content: center;
 }
 
 .apple-auth-button {
-  display: flex !important;
-  align-items: center !important;
-  justify-content: center !important;
+  overflow: visible !important;
   border-radius: 12px !important;
   border-color: rgba(255,255,255,0.2) !important;
   height: 48px !important;
@@ -54,10 +52,6 @@
 
 .apple-auth-button:hover {
   opacity: 0.85;
-}
-
-.apple-auth-button-text {
-  transform: translate(-50%, -50%) !important;
 }
 
 .auth-footer {
