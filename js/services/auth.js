@@ -33,7 +33,6 @@ class AuthService {
   }
 
   async init() {
-    // Wait for CloudKit JS to load
     await this._waitForCloudKit();
 
     CloudKit.configure({
@@ -45,33 +44,62 @@ class AuthService {
 
     // Set up auth listeners
     container.whenUserSignsIn().then(userIdentity => {
-      console.log('[Auth] whenUserSignsIn fired:', userIdentity?.userRecordName);
+      console.log('[Auth] whenUserSignsIn:', userIdentity?.userRecordName);
       this._user = userIdentity;
       this._notify();
     });
 
     container.whenUserSignsOut().then(() => {
-      console.log('[Auth] whenUserSignsOut fired');
+      console.log('[Auth] whenUserSignsOut');
       this._user = null;
       this._notify();
     });
 
-    return this._user;
-  }
-
-  // Call ONCE after the DOM has the #apple-sign-in-button element
-  async setupAuthUI() {
-    if (!this._configured) await this.init();
+    // Process auth immediately — the hidden button divs in index.html
+    // ensure the elements exist. This also handles redirect callbacks
+    // where ckWebAuthToken is in the URL.
     try {
-      const container = getContainer();
+      console.log('[Auth] Calling setUpAuth, URL has token:', window.location.search.includes('ckWebAuthToken'));
       const userIdentity = await container.setUpAuth();
       console.log('[Auth] setUpAuth result:', userIdentity ? 'signed in as ' + userIdentity.userRecordName : 'not signed in');
       if (userIdentity) {
         this._user = userIdentity;
-        this._notify();
       }
     } catch (e) {
       console.warn('[Auth] setUpAuth error:', e);
+    }
+
+    return this._user;
+  }
+
+  // Re-render the sign-in button into the visible auth view
+  async setupAuthUI() {
+    if (!this._configured) await this.init();
+    if (this.isSignedIn) return this._user;
+
+    // Move the CloudKit-rendered button from the hidden div to the visible auth view
+    const hiddenBtn = document.getElementById('apple-sign-in-button');
+    const visibleTarget = document.getElementById('auth-sign-in-button');
+    if (hiddenBtn && visibleTarget && hiddenBtn.children.length > 0) {
+      // Move the rendered button element
+      while (hiddenBtn.children.length > 0) {
+        visibleTarget.appendChild(hiddenBtn.children[0]);
+      }
+    }
+    // If button didn't render (e.g. first load), call setUpAuth with visible target
+    if (visibleTarget && visibleTarget.children.length === 0) {
+      try {
+        const container = getContainer();
+        await container.setUpAuth();
+        // setUpAuth renders into the hidden div, move it
+        if (hiddenBtn && hiddenBtn.children.length > 0) {
+          while (hiddenBtn.children.length > 0) {
+            visibleTarget.appendChild(hiddenBtn.children[0]);
+          }
+        }
+      } catch (e) {
+        console.warn('[Auth] setupAuthUI error:', e);
+      }
     }
     return this._user;
   }

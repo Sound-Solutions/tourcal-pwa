@@ -17,8 +17,7 @@ export function renderAuthView() {
         <h1 class="auth-title">TourCal</h1>
         <p class="auth-subtitle">Tour schedules, day sheets, setlists,<br>and bus stock — all in one place.</p>
       </div>
-      <div id="apple-sign-in-button"></div>
-      <div id="apple-sign-out-button" style="display:none;"></div>
+      <div id="auth-sign-in-button"></div>
       <p class="auth-footer">
         Sign in with your Apple ID to access<br>tours shared with you from the TourCal app.
       </p>

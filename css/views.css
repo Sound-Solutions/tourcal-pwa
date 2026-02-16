@@ -36,12 +36,12 @@
   line-height: 1.4;
 }
 
-#apple-sign-in-button {
+#auth-sign-in-button {
   display: flex;
   justify-content: center;
 }
 
-#apple-sign-in-button .apple-auth-button {
+.apple-auth-button {
   display: flex !important;
   align-items: center !important;
   justify-content: center !important;
@@ -52,11 +52,11 @@
   transition: opacity 0.2s;
 }
 
-#apple-sign-in-button .apple-auth-button:hover {
+.apple-auth-button:hover {
   opacity: 0.85;
 }
 
-#apple-sign-in-button .apple-auth-button-text {
+.apple-auth-button-text {
   position: static !important;
   top: auto !important;
   left: auto !important;
