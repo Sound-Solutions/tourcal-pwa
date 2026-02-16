@@ -45,38 +45,49 @@ class AuthService {
 
     // Set up auth listeners
     container.whenUserSignsIn().then(userIdentity => {
+      console.log('[Auth] whenUserSignsIn fired:', userIdentity?.userRecordName);
       this._user = userIdentity;
       this._notify();
     });
 
     container.whenUserSignsOut().then(() => {
+      console.log('[Auth] whenUserSignsOut fired');
       this._user = null;
       this._notify();
     });
 
+    // Call setUpAuth immediately to process any redirect callback.
+    // The button div may not exist yet — that's OK, it will still
+    // detect auth from cookies/redirect params.
+    try {
+      const userIdentity = await container.setUpAuth();
+      console.log('[Auth] setUpAuth result:', userIdentity ? 'signed in' : 'not signed in');
+      if (userIdentity) {
+        this._user = userIdentity;
+      }
+    } catch (e) {
+      console.warn('[Auth] setUpAuth error (init):', e);
+    }
+
     return this._user;
   }
 
-  // Call after the DOM has the #apple-sign-in-button element
+  // Call after the DOM has the #apple-sign-in-button element to render the button
   async setupAuthUI() {
     if (!this._configured) await this.init();
+    if (this.isSignedIn) return this._user;
     try {
       const container = getContainer();
       const userIdentity = await container.setUpAuth();
+      console.log('[Auth] setupAuthUI result:', userIdentity ? 'signed in' : 'not signed in');
       if (userIdentity) {
         this._user = userIdentity;
         this._notify();
       }
     } catch (e) {
-      console.warn('Auth setup error:', e);
+      console.warn('[Auth] setupAuthUI error:', e);
     }
     return this._user;
-  }
-
-  async signIn() {
-    if (!this._configured) await this.init();
-    // CloudKit JS handles the sign-in UI via the configured button
-    // This triggers the Apple ID sign-in flow
   }
 
   async signOut() {
