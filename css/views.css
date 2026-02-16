@@ -40,26 +40,29 @@
   min-height: 44px;
   display: flex;
   justify-content: center;
+  align-items: center;
   text-align: center;
+  width: 100%;
 }
 
-#apple-sign-in-button > a {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  background: white;
-  color: black;
-  font-size: 17px;
-  font-weight: 500;
-  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', sans-serif;
-  padding: 12px 32px;
-  border-radius: 12px;
-  text-decoration: none;
+#apple-sign-in-button a {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  background: white !important;
+  color: black !important;
+  font-size: 17px !important;
+  font-weight: 500 !important;
+  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', sans-serif !important;
+  padding: 12px 32px !important;
+  border-radius: 12px !important;
+  text-decoration: none !important;
   min-width: 240px;
+  text-align: center !important;
   transition: opacity 0.2s;
 }
 
-#apple-sign-in-button > a:hover {
+#apple-sign-in-button a:hover {
   opacity: 0.85;
 }
 
