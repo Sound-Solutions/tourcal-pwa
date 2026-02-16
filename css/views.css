@@ -36,6 +36,30 @@
   line-height: 1.4;
 }
 
+#apple-sign-in-button {
+  min-height: 44px;
+}
+
+#apple-sign-in-button > a {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: white;
+  color: black;
+  font-size: 17px;
+  font-weight: 500;
+  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', sans-serif;
+  padding: 12px 32px;
+  border-radius: 12px;
+  text-decoration: none;
+  min-width: 240px;
+  transition: opacity 0.2s;
+}
+
+#apple-sign-in-button > a:hover {
+  opacity: 0.85;
+}
+
 .auth-footer {
   font-size: 13px;
   color: var(--text-tertiary);
