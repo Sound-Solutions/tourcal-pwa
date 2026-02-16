@@ -215,8 +215,9 @@ async function init() {
       }
       router.start();
     } else {
-      // Signed out
+      // Signed out - render auth view then set up the sign-in button
       renderAuthView();
+      authService.setupAuthUI();
     }
   });
 
@@ -229,7 +230,9 @@ async function init() {
   if (authService.isSignedIn) {
     router.start();
   } else {
+    // Render the auth view first so the #apple-sign-in-button div exists
     renderAuthView();
+    await authService.setupAuthUI();
   }
 }
 

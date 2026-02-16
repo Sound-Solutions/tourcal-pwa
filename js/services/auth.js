@@ -54,8 +54,14 @@ class AuthService {
       this._notify();
     });
 
-    // Check current auth state
+    return this._user;
+  }
+
+  // Call after the DOM has the #apple-sign-in-button element
+  async setupAuthUI() {
+    if (!this._configured) await this.init();
     try {
+      const container = getContainer();
       const userIdentity = await container.setUpAuth();
       if (userIdentity) {
         this._user = userIdentity;
@@ -64,7 +70,6 @@ class AuthService {
     } catch (e) {
       console.warn('Auth setup error:', e);
     }
-
     return this._user;
   }
 
