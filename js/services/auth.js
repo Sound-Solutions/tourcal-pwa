@@ -15,6 +15,8 @@ class AuthService {
     this._webAuthToken = null;
     this._listeners = [];
     this._configured = false;
+    this._listenersRegistered = false;
+    this._settingUp = false;
   }
 
   get isSignedIn() {
@@ -70,13 +72,14 @@ class AuthService {
       }
     }
 
-    // Step 3: Not signed in — CloudKit JS will be configured
-    // when setupAuthUI() is called after the auth view renders
     return this._user;
   }
 
-  // Call after the auth view DOM is rendered with #apple-sign-in-button
+  // Call ONCE after the auth view DOM is rendered with #apple-sign-in-button
   async setupAuthUI() {
+    if (this._settingUp) return;
+    this._settingUp = true;
+
     await this._waitForCloudKit();
 
     if (!this._configured) {
@@ -88,26 +91,37 @@ class AuthService {
 
     const container = getContainer();
 
-    container.whenUserSignsIn().then(userIdentity => {
-      console.log('[Auth] whenUserSignsIn:', userIdentity?.userRecordName);
-      this._user = userIdentity;
-      this._notify();
-    });
+    // Only register listeners once
+    if (!this._listenersRegistered) {
+      this._listenersRegistered = true;
 
-    container.whenUserSignsOut().then(() => {
-      console.log('[Auth] whenUserSignsOut');
-      this._user = null;
-      this._webAuthToken = null;
-      localStorage.removeItem(TOKEN_KEY);
-      localStorage.removeItem(SESSION_KEY);
-      this._notify();
-    });
+      container.whenUserSignsIn().then(userIdentity => {
+        console.log('[Auth] whenUserSignsIn:', userIdentity?.userRecordName);
+        this._user = userIdentity;
+        this._notify();
+      });
+
+      container.whenUserSignsOut().then(() => {
+        console.log('[Auth] whenUserSignsOut');
+        const wasSignedIn = this._user !== null;
+        this._user = null;
+        this._webAuthToken = null;
+        localStorage.removeItem(TOKEN_KEY);
+        localStorage.removeItem(SESSION_KEY);
+        // Only notify if state actually changed
+        if (wasSignedIn) {
+          this._notify();
+        }
+      });
+    }
 
     try {
       await container.setUpAuth();
     } catch (e) {
       console.warn('[Auth] setUpAuth error:', e);
     }
+
+    this._settingUp = false;
   }
 
   _extractRedirectToken() {
@@ -157,7 +171,6 @@ class AuthService {
     this._notify();
   }
 
-  // Helper for making authenticated CloudKit REST API calls
   async apiFetch(path, options = {}) {
     const token = this._webAuthToken || localStorage.getItem(TOKEN_KEY);
     if (!token) throw new Error('Not authenticated');
