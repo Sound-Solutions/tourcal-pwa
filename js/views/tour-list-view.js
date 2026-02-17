@@ -42,13 +42,23 @@ export async function renderTourListView() {
 
 function _render(container, tours) {
   if (tours.length === 0) {
+    const errors = tourService.lastErrors;
+    const hasErrors = errors.length > 0;
     container.innerHTML = `
       <div class="empty-state">
-        <div class="empty-state-icon">&#127926;</div>
-        <h2 class="empty-state-title">No Tours</h2>
-        <p class="empty-state-text">No tours found. Tours are created in the TourCal iOS app and shared with you via iCloud.</p>
+        <div class="empty-state-icon">${hasErrors ? '&#9888;' : '&#127926;'}</div>
+        <h2 class="empty-state-title">${hasErrors ? 'Could Not Load Tours' : 'No Tours'}</h2>
+        <p class="empty-state-text">${hasErrors
+          ? 'There was a problem connecting to iCloud. This often resolves with a retry.'
+          : 'No tours found. Tours are created in the TourCal iOS app and shared with you via iCloud.'
+        }</p>
+        ${hasErrors ? `<p style="font-size:12px;color:var(--text-tertiary);margin-top:8px">${errors.join('<br>')}</p>` : ''}
+        <button class="btn btn-primary" id="retry-tours-btn" style="margin-top:16px">Retry</button>
       </div>
     `;
+    document.getElementById('retry-tours-btn')?.addEventListener('click', () => {
+      renderTourListView();
+    });
     return;
   }
 

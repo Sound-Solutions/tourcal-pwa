@@ -41,13 +41,15 @@ class TourService {
 
   async fetchTours() {
     const tours = [];
+    const errors = [];
 
     // Fetch from private DB
     try {
       const privateTours = await this._fetchPrivateTours();
       tours.push(...privateTours);
     } catch (e) {
-      console.warn('Error fetching private tours:', e);
+      console.error('[TourService] Error fetching private tours:', e);
+      errors.push(`Private: ${e.message}`);
     }
 
     // Fetch from shared DB
@@ -55,11 +57,15 @@ class TourService {
       const sharedTours = await this._fetchSharedTours();
       tours.push(...sharedTours);
     } catch (e) {
-      console.warn('Error fetching shared tours:', e);
+      console.error('[TourService] Error fetching shared tours:', e);
+      errors.push(`Shared: ${e.message}`);
     }
 
-    console.log(`[TourService] Total tours found: ${tours.length}`);
+    console.log(`[TourService] Total tours found: ${tours.length}` +
+      (errors.length ? ` (errors: ${errors.join('; ')})` : ''));
+
     this._tours = tours.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+    this._lastErrors = errors;
 
     // Cache tours
     await cache.put('tours', this._tours);
@@ -77,22 +83,38 @@ class TourService {
     return this._tours;
   }
 
+  get lastErrors() {
+    return this._lastErrors || [];
+  }
+
   async _fetchPrivateTours() {
     console.log('[TourService] Fetching private tours via REST API...');
+    const body = {
+      zoneID: { zoneName: ZONE_NAME },
+      query: { recordType: 'Tour' }
+    };
+    console.log('[TourService] Private query body:', JSON.stringify(body));
+
     const res = await authService.apiFetch('/private/records/query', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        zoneID: { zoneName: ZONE_NAME },
-        query: { recordType: 'Tour' }
-      })
+      body: JSON.stringify(body)
     });
 
+    console.log('[TourService] Private response status:', res.status);
     const data = await res.json();
-    console.log('[TourService] Private tours response:', JSON.stringify(data).substring(0, 500));
+    console.log('[TourService] Private tours response:', JSON.stringify(data).substring(0, 1000));
+
+    if (data.serverErrorCode) {
+      throw new Error(`CloudKit error: ${data.serverErrorCode} - ${data.reason || ''}`);
+    }
+
     if (!data.records) return [];
 
-    return data.records.map(record => this._parseTour(record, false));
+    console.log(`[TourService] Found ${data.records.length} private tours`);
+    return data.records
+      .filter(r => !r.serverErrorCode)
+      .map(record => this._parseTour(record, false));
   }
 
   async _fetchSharedTours() {
@@ -107,8 +129,9 @@ class TourService {
         body: JSON.stringify({})
       });
 
+      console.log('[TourService] Shared zones response status:', zonesRes.status);
       const zonesData = await zonesRes.json();
-      console.log('[TourService] Shared zones response:', JSON.stringify(zonesData).substring(0, 500));
+      console.log('[TourService] Shared zones response:', JSON.stringify(zonesData).substring(0, 1000));
       if (!zonesData.zones) return [];
 
       for (const zone of zonesData.zones) {

@@ -74,6 +74,8 @@ class AuthService {
         localStorage.setItem(TOKEN_KEY, token);
         this._user = { userRecordName: '_pending_' };
         window.history.replaceState({}, '', window.location.pathname);
+        // Wait for browser to settle HTTP/2 connections after redirect
+        await new Promise(r => setTimeout(r, 1500));
         return this._user;
       } else {
         console.log('[Auth] Token invalid, clearing');
@@ -216,27 +218,39 @@ class AuthService {
     const separator = path.includes('?') ? '&' : '?';
     const url = `${API_BASE}${path}${separator}ckAPIToken=${API_TOKEN}&ckWebAuthToken=${encodeURIComponent(token)}`;
 
-    for (let attempt = 0; attempt < 3; attempt++) {
-      const res = await fetch(url, options);
-      if (res.status === 421) {
-        console.warn(`[Auth] 421 on ${path} (attempt ${attempt + 1}), retrying...`);
-        await new Promise(r => setTimeout(r, 500 * (attempt + 1)));
-        continue;
+    const maxAttempts = 5;
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+      try {
+        const res = await fetch(url, options);
+        if (res.status === 421) {
+          const delay = 800 * (attempt + 1);  // 800, 1600, 2400, 3200, 4000ms
+          console.warn(`[Auth] 421 on ${path} (attempt ${attempt + 1}/${maxAttempts}), retrying in ${delay}ms...`);
+          await new Promise(r => setTimeout(r, delay));
+          continue;
+        }
+        if (res.status === 401) {
+          this._user = null;
+          this._webAuthToken = null;
+          localStorage.removeItem(TOKEN_KEY);
+          this._notify();
+          throw new Error('Session expired');
+        }
+        // If user was pending, update with real info on first success
+        if (this._user?.userRecordName === '_pending_' && res.ok) {
+          this._resolveUser(token);
+        }
+        return res;
+      } catch (e) {
+        if (e.message === 'Session expired') throw e;
+        console.warn(`[Auth] Network error on ${path} (attempt ${attempt + 1}/${maxAttempts}):`, e.message);
+        if (attempt < maxAttempts - 1) {
+          await new Promise(r => setTimeout(r, 800 * (attempt + 1)));
+          continue;
+        }
+        throw e;
       }
-      if (res.status === 401) {
-        this._user = null;
-        this._webAuthToken = null;
-        localStorage.removeItem(TOKEN_KEY);
-        this._notify();
-        throw new Error('Session expired');
-      }
-      // If user was pending, update with real info on first success
-      if (this._user?.userRecordName === '_pending_' && res.ok) {
-        this._resolveUser(token);
-      }
-      return res;
     }
-    throw new Error('API request failed after retries (421)');
+    throw new Error(`API request failed after ${maxAttempts} retries (421)`);
   }
 
   // Background resolve of user identity after pending auth
