@@ -17,7 +17,7 @@ export const CK_CONFIG = {
       theme: 'dark'
     }
   },
-  environment: 'production'
+  environment: 'development'
 };
 
 export const ZONE_NAME = 'TourCalZone';
