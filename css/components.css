@@ -579,7 +579,7 @@
 .smpte {
   font-family: 'SF Mono', 'Menlo', 'Courier New', monospace;
   font-size: 13px;
-  color: var(--text-secondary);
+  color: var(--system-orange);
 }
 
 /* Crew contact links */

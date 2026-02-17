@@ -329,10 +329,26 @@
   gap: 3px;
 }
 
+.setlist-meta-item.duration {
+  color: var(--system-blue);
+}
+
 .setlist-notes {
   margin-top: 6px;
   font-size: 14px;
   line-height: 1.4;
+}
+
+.setlist-total {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 4px;
+  padding: 8px 16px;
+  border-top: 1px solid var(--separator);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  color: var(--system-blue);
 }
 
 /* Bus Stock View */

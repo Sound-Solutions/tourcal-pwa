@@ -59,7 +59,7 @@ function _render(container, setlists, masterSetlist, events, tour) {
     const totalDuration = setlistService.getTotalDuration(masterSetlist);
     html += `<div style="font-size:13px;color:var(--text-secondary);margin-bottom:8px">${masterSetlist.entries.length} songs &middot; ${formatDurationHM(totalDuration)}</div>`;
     html += '<div class="card">';
-    html += _renderEntries(masterSetlist.entries);
+    html += _renderEntries(masterSetlist.entries, totalDuration);
     html += '</div>';
     if (masterSetlist.notes) {
       html += `<div class="daysheet-notes" style="margin-top:12px">${_esc(masterSetlist.notes)}</div>`;
@@ -148,7 +148,8 @@ function _render(container, setlists, masterSetlist, events, tour) {
       if (sl) {
         const detail = document.getElementById('show-setlist-detail');
         if (detail) {
-          detail.innerHTML = `<div class="card">${_renderEntries(sl.entries)}</div>`;
+          const slTotal = setlistService.getTotalDuration(sl);
+          detail.innerHTML = `<div class="card">${_renderEntries(sl.entries, slTotal)}</div>`;
           detail.scrollIntoView({ behavior: 'smooth' });
         }
       }
@@ -156,7 +157,7 @@ function _render(container, setlists, masterSetlist, events, tour) {
   });
 }
 
-function _renderEntries(entries) {
+function _renderEntries(entries, totalDuration) {
   let html = '';
   for (let i = 0; i < entries.length; i++) {
     const entry = entries[i];
@@ -166,13 +167,21 @@ function _renderEntries(entries) {
         <div class="setlist-entry-content">
           <div class="setlist-song-name">${_esc(entry.songName || '')}</div>
           <div class="setlist-meta">
-            ${entry.duration ? `<span class="setlist-meta-item">${formatDuration(entry.duration)}</span>` : ''}
+            ${entry.duration ? `<span class="setlist-meta-item duration">${formatDuration(entry.duration)}</span>` : ''}
             ${entry.bpm ? `<span class="setlist-meta-item">${entry.bpm} BPM</span>` : ''}
             ${entry.key ? `<span class="setlist-meta-item">${_esc(entry.key)}</span>` : ''}
             ${entry.timecode ? `<span class="smpte">${formatSMPTE(entry.timecode)}</span>` : ''}
           </div>
           ${_renderRichNotes(entry)}
         </div>
+      </div>
+    `;
+  }
+  if (totalDuration > 0) {
+    html += `
+      <div class="setlist-total">
+        <span class="setlist-total-icon">&#128339;</span>
+        <span>${formatDurationHM(totalDuration)}</span>
       </div>
     `;
   }
