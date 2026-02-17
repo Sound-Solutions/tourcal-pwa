@@ -58,6 +58,7 @@ class TourService {
       console.warn('Error fetching shared tours:', e);
     }
 
+    console.log(`[TourService] Total tours found: ${tours.length}`);
     this._tours = tours.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
 
     // Cache tours
@@ -77,6 +78,7 @@ class TourService {
   }
 
   async _fetchPrivateTours() {
+    console.log('[TourService] Fetching private tours via REST API...');
     const res = await authService.apiFetch('/private/records/query', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -87,12 +89,14 @@ class TourService {
     });
 
     const data = await res.json();
+    console.log('[TourService] Private tours response:', JSON.stringify(data).substring(0, 500));
     if (!data.records) return [];
 
     return data.records.map(record => this._parseTour(record, false));
   }
 
   async _fetchSharedTours() {
+    console.log('[TourService] Fetching shared tours via REST API...');
     const tours = [];
 
     try {
@@ -104,6 +108,7 @@ class TourService {
       });
 
       const zonesData = await zonesRes.json();
+      console.log('[TourService] Shared zones response:', JSON.stringify(zonesData).substring(0, 500));
       if (!zonesData.zones) return [];
 
       for (const zone of zonesData.zones) {
