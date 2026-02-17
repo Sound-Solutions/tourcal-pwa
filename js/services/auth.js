@@ -65,6 +65,16 @@ class AuthService {
           window.history.replaceState({}, '', window.location.pathname);
         }
         return this._user;
+      } else if (redirectToken) {
+        // Apple gave us this token via redirect - trust it even if
+        // validation got a 421 (HTTP/2 browser issue). The first real
+        // API call will confirm whether the token actually works.
+        console.log('[Auth] Storing redirect token despite validation failure');
+        this._webAuthToken = token;
+        localStorage.setItem(TOKEN_KEY, token);
+        this._user = { userRecordName: '_pending_' };
+        window.history.replaceState({}, '', window.location.pathname);
+        return this._user;
       } else {
         console.log('[Auth] Token invalid, clearing');
         localStorage.removeItem(TOKEN_KEY);
@@ -137,24 +147,36 @@ class AuthService {
   }
 
   async _validateToken(token) {
-    try {
-      const url = `${API_BASE}/private/users/caller?ckAPIToken=${API_TOKEN}&ckWebAuthToken=${encodeURIComponent(token)}`;
-      const res = await fetch(url);
-      if (!res.ok) {
-        console.warn('[Auth] Token validation failed:', res.status);
+    const url = `${API_BASE}/private/users/caller?ckAPIToken=${API_TOKEN}&ckWebAuthToken=${encodeURIComponent(token)}`;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        const res = await fetch(url);
+        if (res.status === 421) {
+          console.warn(`[Auth] 421 Misdirected Request (attempt ${attempt + 1}), retrying...`);
+          await new Promise(r => setTimeout(r, 500 * (attempt + 1)));
+          continue;
+        }
+        if (!res.ok) {
+          console.warn('[Auth] Token validation failed:', res.status);
+          return null;
+        }
+        const data = await res.json();
+        console.log('[Auth] Validated user:', data.userRecordName);
+        return {
+          userRecordName: data.userRecordName,
+          nameComponents: data.nameComponents || null,
+          lookupInfo: data.lookupInfo || null
+        };
+      } catch (e) {
+        console.warn(`[Auth] Token validation error (attempt ${attempt + 1}):`, e);
+        if (attempt < 2) {
+          await new Promise(r => setTimeout(r, 500));
+          continue;
+        }
         return null;
       }
-      const data = await res.json();
-      console.log('[Auth] Validated user:', data.userRecordName);
-      return {
-        userRecordName: data.userRecordName,
-        nameComponents: data.nameComponents || null,
-        lookupInfo: data.lookupInfo || null
-      };
-    } catch (e) {
-      console.warn('[Auth] Token validation error:', e);
-      return null;
     }
+    return null;
   }
 
   async signOut() {
@@ -178,15 +200,38 @@ class AuthService {
     const separator = path.includes('?') ? '&' : '?';
     const url = `${API_BASE}${path}${separator}ckAPIToken=${API_TOKEN}&ckWebAuthToken=${encodeURIComponent(token)}`;
 
-    const res = await fetch(url, options);
-    if (res.status === 401 || res.status === 421) {
-      this._user = null;
-      this._webAuthToken = null;
-      localStorage.removeItem(TOKEN_KEY);
-      this._notify();
-      throw new Error('Session expired');
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const res = await fetch(url, options);
+      if (res.status === 421) {
+        console.warn(`[Auth] 421 on ${path} (attempt ${attempt + 1}), retrying...`);
+        await new Promise(r => setTimeout(r, 500 * (attempt + 1)));
+        continue;
+      }
+      if (res.status === 401) {
+        this._user = null;
+        this._webAuthToken = null;
+        localStorage.removeItem(TOKEN_KEY);
+        this._notify();
+        throw new Error('Session expired');
+      }
+      // If user was pending, update with real info on first success
+      if (this._user?.userRecordName === '_pending_' && res.ok) {
+        this._resolveUser(token);
+      }
+      return res;
     }
-    return res;
+    throw new Error('API request failed after retries (421)');
+  }
+
+  // Background resolve of user identity after pending auth
+  async _resolveUser(token) {
+    try {
+      const user = await this._validateToken(token);
+      if (user) {
+        this._user = user;
+        console.log('[Auth] Resolved pending user:', user.userRecordName);
+      }
+    } catch (e) { /* ignore */ }
   }
 
   _waitForCloudKit() {
