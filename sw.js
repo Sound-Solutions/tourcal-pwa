@@ -1,6 +1,6 @@
 // TourCal PWA - Service Worker
 
-const CACHE_NAME = 'tourcal-v20';
+const CACHE_NAME = 'tourcal-v21';
 const APP_SHELL = [
   './',
   './index.html',

@@ -1,6 +1,7 @@
 // Tour List View - Tour selector
 
 import { tourService } from '../services/tour-service.js';
+import { router } from '../router.js';
 import { showToast } from '../components/toast.js';
 
 export async function renderTourListView() {
@@ -91,7 +92,10 @@ function _render(container, tours) {
       const tour = tours.find(t => t.recordName === tourId);
       if (tour) {
         tourService.activeTour = tour;
+        // Navigate to schedule. If hash is already #/, hashchange won't
+        // fire, so use router.start() to force re-resolve.
         window.location.hash = '#/';
+        router.start();
       }
     });
   });
