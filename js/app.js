@@ -5,7 +5,7 @@ import { tourService } from './services/tour-service.js';
 import { router } from './router.js';
 import { renderNavBar, getActiveTab } from './components/nav-bar.js';
 import { renderTourPicker } from './components/tour-picker.js';
-import { renderAuthView } from './views/auth-view.js';
+import { renderAuthView, cleanupAuthView } from './views/auth-view.js';
 import { renderTourListView } from './views/tour-list-view.js';
 import { renderScheduleView } from './views/schedule-view.js';
 import { renderEventDetailView } from './views/event-detail-view.js';
@@ -207,6 +207,7 @@ async function init() {
   // Listen for auth changes
   authService.onAuthChange((user) => {
     if (user) {
+      cleanupAuthView();
       // Signed in - go to tours or current route
       if (window.location.hash === '' || window.location.hash === '#/') {
         if (!tourService.activeTour) {

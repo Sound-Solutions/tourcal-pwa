@@ -1,6 +1,16 @@
 // Auth View - Apple ID Sign-in Screen
 
+import { authService } from '../services/auth.js';
+
+let _authRefreshInterval = null;
+
 export function renderAuthView() {
+  // Clear any previous refresh interval
+  if (_authRefreshInterval) {
+    clearInterval(_authRefreshInterval);
+    _authRefreshInterval = null;
+  }
+
   const content = document.getElementById('app-content');
   content.innerHTML = `
     <div class="auth-view">
@@ -32,4 +42,29 @@ export function renderAuthView() {
   document.getElementById('app-nav').classList.add('hidden');
   document.getElementById('header-title').textContent = 'TourCal';
   document.getElementById('header-actions').innerHTML = '';
+
+  // Refresh the CloudKit OAuth token every 4 minutes to prevent
+  // "OAuth Token expired" errors on Apple's sign-in page
+  _authRefreshInterval = setInterval(() => {
+    console.log('[AuthView] Refreshing OAuth token...');
+    authService.setupAuthUI();
+  }, 4 * 60 * 1000);
+
+  // Also refresh when the user returns to this tab
+  document.addEventListener('visibilitychange', _onVisibilityChange);
+}
+
+function _onVisibilityChange() {
+  if (document.visibilityState === 'visible' && document.getElementById('apple-sign-in-button')) {
+    console.log('[AuthView] Page visible, refreshing OAuth token...');
+    authService.setupAuthUI();
+  }
+}
+
+export function cleanupAuthView() {
+  if (_authRefreshInterval) {
+    clearInterval(_authRefreshInterval);
+    _authRefreshInterval = null;
+  }
+  document.removeEventListener('visibilitychange', _onVisibilityChange);
 }

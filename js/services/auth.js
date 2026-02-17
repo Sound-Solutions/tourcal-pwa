@@ -87,64 +87,66 @@ class AuthService {
     return this._user;
   }
 
-  // Call ONCE after the auth view DOM is rendered with #apple-sign-in-button
+  // Call after the auth view DOM is rendered with #apple-sign-in-button.
+  // Safe to call multiple times - refreshes the OAuth token each time.
   async setupAuthUI() {
     if (this._settingUp) return;
     this._settingUp = true;
 
-    await this._waitForCloudKit();
-
-    if (!this._configured) {
-      CloudKit.configure({
-        containers: [CK_CONFIG]
-      });
-      this._configured = true;
-    }
-
-    const container = getContainer();
-
-    // Only register listeners once
-    if (!this._listenersRegistered) {
-      this._listenersRegistered = true;
-
-      container.whenUserSignsIn().then(userIdentity => {
-        console.log('[Auth] whenUserSignsIn:', userIdentity?.userRecordName);
-        this._user = userIdentity;
-        this._notify();
-      });
-
-      container.whenUserSignsOut().then(() => {
-        console.log('[Auth] whenUserSignsOut');
-        const wasSignedIn = this._user !== null;
-        this._user = null;
-        this._webAuthToken = null;
-        localStorage.removeItem(TOKEN_KEY);
-        localStorage.removeItem(SESSION_KEY);
-        // Only notify if state actually changed
-        if (wasSignedIn) {
-          this._notify();
-        }
-      });
-    }
-
-    // Force same-window redirect instead of CloudKit JS opening a popup tab.
-    // CloudKit JS calls window.open() for Apple sign-in; we intercept it
-    // so the auth flow stays in the same window for better UX.
-    if (!window._ckOpenPatched) {
-      const originalOpen = window.open;
-      window.open = function(url, ...args) {
-        if (url && typeof url === 'string' && url.includes('apple.com') && url.includes('auth')) {
-          console.log('[Auth] Redirecting to Apple sign-in (same window)');
-          window.location.href = url;
-          return null;
-        }
-        return originalOpen.call(this, url, ...args);
-      };
-      window._ckOpenPatched = true;
-    }
-
     try {
+      await this._waitForCloudKit();
+
+      if (!this._configured) {
+        CloudKit.configure({
+          containers: [CK_CONFIG]
+        });
+        this._configured = true;
+      }
+
+      const container = getContainer();
+
+      // Only register listeners once
+      if (!this._listenersRegistered) {
+        this._listenersRegistered = true;
+
+        container.whenUserSignsIn().then(userIdentity => {
+          console.log('[Auth] whenUserSignsIn:', userIdentity?.userRecordName);
+          this._user = userIdentity;
+          this._notify();
+        });
+
+        container.whenUserSignsOut().then(() => {
+          console.log('[Auth] whenUserSignsOut');
+          const wasSignedIn = this._user !== null;
+          this._user = null;
+          this._webAuthToken = null;
+          localStorage.removeItem(TOKEN_KEY);
+          localStorage.removeItem(SESSION_KEY);
+          // Only notify if state actually changed
+          if (wasSignedIn) {
+            this._notify();
+          }
+        });
+      }
+
+      // Force same-window redirect instead of CloudKit JS opening a popup tab.
+      // CloudKit JS calls window.open() for Apple sign-in; we intercept it
+      // so the auth flow stays in the same window for better UX.
+      if (!window._ckOpenPatched) {
+        const originalOpen = window.open;
+        window.open = function(url, ...args) {
+          if (url && typeof url === 'string' && url.includes('apple.com') && url.includes('auth')) {
+            console.log('[Auth] Redirecting to Apple sign-in (same window)');
+            window.location.href = url;
+            return null;
+          }
+          return originalOpen.call(this, url, ...args);
+        };
+        window._ckOpenPatched = true;
+      }
+
       await container.setUpAuth();
+      console.log('[Auth] setUpAuth completed');
     } catch (e) {
       console.warn('[Auth] setUpAuth error:', e);
     }
