@@ -65,22 +65,19 @@ class AuthService {
           window.history.replaceState({}, '', window.location.pathname);
         }
         return this._user;
-      } else if (redirectToken) {
-        // Apple gave us this token via redirect - trust it even if
-        // validation got a 421 (HTTP/2 browser issue). The first real
-        // API call will confirm whether the token actually works.
-        console.log('[Auth] Storing redirect token despite validation failure');
+      } else {
+        // Validation endpoint may fail (e.g. 400 in dev environment)
+        // but the token can still work for data queries. Trust it and
+        // let apiFetch's 401 handler clear auth if truly expired.
+        console.log('[Auth] Validation endpoint failed, trusting stored token');
         this._webAuthToken = token;
         localStorage.setItem(TOKEN_KEY, token);
         this._user = { userRecordName: '_pending_' };
-        window.history.replaceState({}, '', window.location.pathname);
-        // Wait for browser to settle HTTP/2 connections after redirect
-        await new Promise(r => setTimeout(r, 1500));
+        if (redirectToken) {
+          window.history.replaceState({}, '', window.location.pathname);
+          await new Promise(r => setTimeout(r, 1500));
+        }
         return this._user;
-      } else {
-        console.log('[Auth] Token invalid, clearing');
-        localStorage.removeItem(TOKEN_KEY);
-        localStorage.removeItem(SESSION_KEY);
       }
     }
 
