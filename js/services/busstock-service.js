@@ -9,8 +9,9 @@ class BusStockService {
     if (!tour) return [];
 
     try {
+      // Bus records store tourID as a plain string, not a reference
       const records = await queryRecords(tour, 'Bus', {
-        filterBy: [tourFilter(tour)],
+        filterBy: [stringFilter('tourID', tour.recordName)],
         sortBy: [{ fieldName: 'order', ascending: true }]
       });
 
