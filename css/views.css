@@ -36,23 +36,36 @@
   line-height: 1.4;
 }
 
-/* Hide CloudKit's broken SVG button, keep it for its click handler */
-#apple-sign-in-button {
+/* Wrapper positions CloudKit's invisible button over our visible label */
+.sign-in-wrapper {
   position: relative;
-  display: flex;
-  justify-content: center;
+  display: inline-flex;
+  cursor: pointer;
 }
 
+/* CloudKit renders its button inside here - stretch it over the wrapper */
+#apple-sign-in-button {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 2;
+  overflow: hidden;
+}
+
+/* Hide CloudKit's ugly SVG button but keep it clickable */
 #apple-sign-in-button .apple-auth-button {
   position: absolute !important;
+  top: 0 !important;
+  left: 0 !important;
+  width: 100% !important;
+  height: 100% !important;
   opacity: 0 !important;
-  width: 260px !important;
-  height: 48px !important;
-  cursor: pointer;
-  z-index: 2;
+  cursor: pointer !important;
 }
 
-/* Our own clean button overlay */
+/* Our own clean visible button */
 #apple-sign-in-label {
   display: flex;
   align-items: center;
@@ -70,10 +83,9 @@
   box-sizing: border-box;
   cursor: pointer;
   transition: opacity 0.2s;
-  pointer-events: none;
 }
 
-#apple-sign-in-button:hover #apple-sign-in-label {
+.sign-in-wrapper:hover #apple-sign-in-label {
   opacity: 0.85;
 }
 
