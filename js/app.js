@@ -206,9 +206,11 @@ async function init() {
   }
 
   // Listen for auth changes
-  authService.onAuthChange((user) => {
+  authService.onAuthChange(async (user) => {
     if (user) {
       cleanupAuthView();
+      // Restore cached tour before routing
+      await tourService.loadCachedTours();
       // Signed in - go to tours or current route
       if (window.location.hash === '' || window.location.hash === '#/') {
         if (!tourService.activeTour) {
@@ -227,6 +229,11 @@ async function init() {
   tourService.onTourChange((tour) => {
     if (tour) applyTourColor(tour);
   });
+
+  // Restore active tour from cache before routing
+  if (authService.isSignedIn) {
+    await tourService.loadCachedTours();
+  }
 
   // Start router
   if (authService.isSignedIn) {
