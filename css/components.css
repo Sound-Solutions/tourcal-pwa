@@ -401,8 +401,8 @@
 }
 
 .check-box.checked {
-  background: var(--tour-color);
-  border-color: var(--tour-color);
+  background: var(--system-green);
+  border-color: var(--system-green);
 }
 
 .check-box.checked::after {
