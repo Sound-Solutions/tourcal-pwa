@@ -6,14 +6,22 @@ import { formatDateISO, formatDateShort, todayKey } from '../models/formatters.j
 import { canEditBusStock } from '../models/permissions.js';
 import { showToast } from '../components/toast.js';
 
+const STORAGE_BUS_KEY = 'tourcal_busstock_busId';
+const STORAGE_DATE_KEY = 'tourcal_busstock_date';
+
 let _state = {
   buses: [],
-  selectedBusId: null,
-  selectedDate: todayKey(),
+  selectedBusId: sessionStorage.getItem(STORAGE_BUS_KEY) || null,
+  selectedDate: sessionStorage.getItem(STORAGE_DATE_KEY) || todayKey(),
   sheet: null,
   tour: null,
   showAddForm: false
 };
+
+function _saveSelection() {
+  if (_state.selectedBusId) sessionStorage.setItem(STORAGE_BUS_KEY, _state.selectedBusId);
+  if (_state.selectedDate) sessionStorage.setItem(STORAGE_DATE_KEY, _state.selectedDate);
+}
 
 export async function renderBusStockView() {
   const content = document.getElementById('app-content');
@@ -48,11 +56,12 @@ export async function renderBusStockView() {
       return;
     }
 
-    // Select first bus if none selected
-    if (!_state.selectedBusId) {
+    // Restore or default bus selection
+    if (!_state.selectedBusId || !_state.buses.find(b => b.id === _state.selectedBusId)) {
       _state.selectedBusId = _state.buses[0].id;
     }
 
+    _saveSelection();
     await _loadSheet();
     _render(content);
   } catch (e) {
@@ -71,6 +80,7 @@ export async function renderBusStockSheetView({ busId, date }) {
   _state.selectedBusId = busId;
   _state.selectedDate = date;
   _state.tour = tourService.activeTour;
+  _saveSelection();
   await renderBusStockView();
 }
 
@@ -206,6 +216,7 @@ function _bindEvents(container) {
     chip.addEventListener('click', async () => {
       _state.selectedBusId = chip.dataset.busId;
       _state.showAddForm = false;
+      _saveSelection();
       await _loadSheet();
       _render(container);
     });
@@ -217,6 +228,7 @@ function _bindEvents(container) {
     dateInput.addEventListener('change', async () => {
       _state.selectedDate = dateInput.value;
       _state.showAddForm = false;
+      _saveSelection();
       await _loadSheet();
       _render(container);
     });
@@ -227,6 +239,7 @@ function _bindEvents(container) {
     d.setDate(d.getDate() - 1);
     _state.selectedDate = formatDateISO(d);
     _state.showAddForm = false;
+    _saveSelection();
     await _loadSheet();
     _render(container);
   });
@@ -236,6 +249,7 @@ function _bindEvents(container) {
     d.setDate(d.getDate() + 1);
     _state.selectedDate = formatDateISO(d);
     _state.showAddForm = false;
+    _saveSelection();
     await _loadSheet();
     _render(container);
   });

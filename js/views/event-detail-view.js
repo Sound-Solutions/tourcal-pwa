@@ -5,7 +5,8 @@ import { eventService } from '../services/event-service.js';
 import { daySheetService } from '../services/daysheet-service.js';
 import { setlistService } from '../services/setlist-service.js';
 import { venueService } from '../services/venue-service.js';
-import { formatDateLong, formatTime, formatTimeRange, formatDuration, formatDurationHM, formatSMPTE } from '../models/formatters.js';
+import { busStockService } from '../services/busstock-service.js';
+import { formatDateLong, formatDateISO, formatTime, formatTimeRange, formatDuration, formatDurationHM, formatSMPTE } from '../models/formatters.js';
 import { canView } from '../models/permissions.js';
 import { cache } from '../services/cache.js';
 
@@ -48,13 +49,24 @@ export async function renderEventDetailView({ id }) {
 
     // Fetch related data
     const tz = event.timeZoneIdentifier;
-    const [daysheet, setlist, venueNote] = await Promise.all([
+    const [daysheet, setlist, venueNote, buses] = await Promise.all([
       daySheetService.fetchDaySheet(tour, event.eventKey),
       setlistService.fetchSetlistForEvent(tour, event.eventKey),
-      event.venue ? venueService.fetchVenueNote(tour, venueService.generateVenueKey(event.venue)) : null
+      event.venue ? venueService.fetchVenueNote(tour, venueService.generateVenueKey(event.venue)) : null,
+      busStockService.fetchBuses(tour)
     ]);
 
-    _render(content, event, daysheet, setlist, venueNote, tour);
+    // Fetch sheets for each bus on the event date
+    const eventDate = new Date(event.startDate);
+    const busSheets = [];
+    if (buses.length > 0) {
+      const sheetPromises = buses.map(bus =>
+        busStockService.fetchSheet(tour, bus.id, eventDate).then(sheet => ({ bus, sheet }))
+      );
+      busSheets.push(...await Promise.all(sheetPromises));
+    }
+
+    _render(content, event, daysheet, setlist, venueNote, tour, busSheets);
   } catch (e) {
     console.error('Error loading event detail:', e);
     content.innerHTML = `
@@ -68,7 +80,7 @@ export async function renderEventDetailView({ id }) {
   }
 }
 
-function _render(container, event, daysheet, setlist, venueNote, tour) {
+function _render(container, event, daysheet, setlist, venueNote, tour, busSheets = []) {
   const tz = event.timeZoneIdentifier;
   const role = tour.role;
 
@@ -158,6 +170,31 @@ function _render(container, event, daysheet, setlist, venueNote, tour) {
     html += '<div class="section-subheader">VENUE INFO</div>';
     html += '<div class="card">';
     html += _renderVenueFields(venueNote);
+    html += '</div>';
+  }
+
+  // Bus Stock section
+  if (busSheets.length > 0) {
+    const eventDateISO = formatDateISO(new Date(event.startDate));
+    html += '<div class="section-subheader">BUS STOCK</div>';
+    html += '<div class="card">';
+    for (let i = 0; i < busSheets.length; i++) {
+      const { bus, sheet } = busSheets[i];
+      const checked = sheet ? sheet.items.filter(it => it.isChecked).length : 0;
+      const total = sheet ? sheet.items.length : 0;
+      const locked = sheet && busStockService.isSheetLocked(sheet);
+      html += `
+        <a class="busstock-link" href="#/busstock/${bus.id}/${eventDateISO}" style="display:flex;align-items:center;padding:10px 16px;text-decoration:none;color:inherit">
+          <span style="flex:1;font-size:15px">${_esc(bus.name)}</span>
+          ${locked ? '<span style="color:var(--system-orange);font-size:13px;margin-right:8px">&#128274;</span>' : ''}
+          <span style="font-size:13px;color:var(--text-secondary);font-variant-numeric:tabular-nums">${checked}/${total}</span>
+          <span style="margin-left:8px;color:var(--text-tertiary);font-size:12px">&#8250;</span>
+        </a>
+      `;
+      if (i < busSheets.length - 1) {
+        html += '<div style="border-top:1px solid var(--separator);margin-left:16px"></div>';
+      }
+    }
     html += '</div>';
   }
 
