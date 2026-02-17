@@ -255,8 +255,10 @@ class AuthService {
     throw new Error(`API request failed after ${maxAttempts} retries (421)`);
   }
 
-  // Background resolve of user identity after pending auth
+  // Background resolve of user identity after pending auth (one attempt only)
   async _resolveUser(token) {
+    if (this._resolveAttempted) return;
+    this._resolveAttempted = true;
     try {
       const user = await this._validateToken(token);
       if (user) {

@@ -52,7 +52,8 @@ function requireAuth(handler) {
 function requireTour(handler) {
   return requireAuth(async (params) => {
     if (!tourService.activeTour) {
-      await renderTourListView();
+      // Redirect to #/tours so clicking a tour changes the hash back to #/
+      window.location.hash = '#/tours';
       return;
     }
     await handler(params);
