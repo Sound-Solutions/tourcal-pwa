@@ -1,6 +1,8 @@
 // Tour Service - Fetch tours from private + shared CloudKit databases
+// Uses REST API via authService.apiFetch() for reliable auth.
 
-import { getPrivateDB, getSharedDB, ZONE_NAME, zoneID } from '../cloudkit-config.js';
+import { ZONE_NAME, zoneID } from '../cloudkit-config.js';
+import { authService } from './auth.js';
 import { cache } from './cache.js';
 
 class TourService {
@@ -75,45 +77,56 @@ class TourService {
   }
 
   async _fetchPrivateTours() {
-    const db = getPrivateDB();
-    const response = await db.performQuery({
-      recordType: 'Tour',
-      zoneID: zoneID(ZONE_NAME)
+    const res = await authService.apiFetch('/private/records/query', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        zoneID: { zoneName: ZONE_NAME },
+        query: { recordType: 'Tour' }
+      })
     });
 
-    if (!response.records) return [];
+    const data = await res.json();
+    if (!data.records) return [];
 
-    return response.records.map(record => this._parseTour(record, false));
+    return data.records.map(record => this._parseTour(record, false));
   }
 
   async _fetchSharedTours() {
-    const db = getSharedDB();
     const tours = [];
 
     try {
-      const zonesResponse = await db.fetchAllRecordZones();
-      if (!zonesResponse.zones) return [];
+      // Fetch all shared zones
+      const zonesRes = await authService.apiFetch('/shared/zones/list', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({})
+      });
 
-      for (const zone of zonesResponse.zones) {
+      const zonesData = await zonesRes.json();
+      if (!zonesData.zones) return [];
+
+      for (const zone of zonesData.zones) {
         try {
-          const response = await db.performQuery({
-            recordType: 'Tour',
-            zoneID: {
-              zoneName: zone.zoneID.zoneName,
-              ownerRecordName: zone.zoneID.ownerRecordName
-            }
+          const zid = zone.zoneID;
+          const res = await authService.apiFetch('/shared/records/query', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              zoneID: { zoneName: zid.zoneName, ownerRecordName: zid.ownerRecordName },
+              query: { recordType: 'Tour' }
+            })
           });
 
-          if (response.records) {
-            for (const record of response.records) {
+          const data = await res.json();
+          if (data.records) {
+            for (const record of data.records) {
               const tour = this._parseTour(record, true);
               tour.zoneID = {
-                zoneName: zone.zoneID.zoneName,
-                ownerRecordName: zone.zoneID.ownerRecordName
+                zoneName: zid.zoneName,
+                ownerRecordName: zid.ownerRecordName
               };
-
-              // Detect share role
-              tour.role = await this._detectRole(record, zone);
+              tour.role = this._detectRoleFromRecord(record);
               tours.push(tour);
             }
           }
@@ -128,33 +141,11 @@ class TourService {
     return tours;
   }
 
-  async _detectRole(record, zone) {
-    try {
-      const db = getSharedDB();
-      // Try to fetch the share record for this zone
-      const shareResponse = await db.fetchRecords([{
-        recordName: `cloudkit.share.${zone.zoneID.zoneName}`,
-        zoneID: {
-          zoneName: zone.zoneID.zoneName,
-          ownerRecordName: zone.zoneID.ownerRecordName
-        }
-      }]);
-
-      if (shareResponse.records && shareResponse.records.length > 0) {
-        const share = shareResponse.records[0];
-        // Check custom tourRole field first (new shares)
-        if (share.fields?.tourRole?.value) {
-          return share.fields.tourRole.value;
-        }
-        // Fall back to permission-based detection
-        if (share.publicPermission === 'READ_WRITE' ||
-            share.currentUserParticipant?.permission === 'READ_WRITE') {
-          return 'Admin';
-        }
-        return 'Crew';
-      }
-    } catch (e) {
-      console.warn('Error detecting role:', e);
+  _detectRoleFromRecord(record) {
+    // Check for share participant permissions in the record
+    if (record.share) {
+      const participant = record.share.currentUserParticipant;
+      if (participant?.permission === 'READ_WRITE') return 'Admin';
     }
     return 'Crew';
   }
@@ -172,13 +163,13 @@ class TourService {
       daySheetDefaults: f.daySheetDefaults?.value
         ? JSON.parse(f.daySheetDefaults.value)
         : null,
-      role: isShared ? 'Crew' : 'Owner', // Updated after share role detection
+      role: isShared ? 'Crew' : 'Owner',
       _record: record
     };
   }
 
   getDB(tour) {
-    return tour?.isShared ? getSharedDB() : getPrivateDB();
+    return tour?.isShared ? 'shared' : 'private';
   }
 
   getZoneID(tour) {
