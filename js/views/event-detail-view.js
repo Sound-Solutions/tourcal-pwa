@@ -5,7 +5,7 @@ import { eventService } from '../services/event-service.js';
 import { daySheetService } from '../services/daysheet-service.js';
 import { setlistService } from '../services/setlist-service.js';
 import { venueService } from '../services/venue-service.js';
-import { formatDateLong, formatTime, formatTimeRange, formatDuration, formatSMPTE } from '../models/formatters.js';
+import { formatDateLong, formatTime, formatTimeRange, formatDuration, formatDurationHM, formatSMPTE } from '../models/formatters.js';
 import { canView } from '../models/permissions.js';
 import { cache } from '../services/cache.js';
 
@@ -118,6 +118,7 @@ function _render(container, event, daysheet, setlist, venueNote, tour) {
 
   // Setlist section
   if (setlist && setlist.entries.length > 0) {
+    const totalDuration = setlistService.getTotalDuration(setlist);
     html += '<div class="section-subheader">SETLIST</div>';
     html += '<div class="card">';
 
@@ -129,13 +130,22 @@ function _render(container, event, daysheet, setlist, venueNote, tour) {
           <div class="setlist-entry-content">
             <div class="setlist-song-name">${_esc(entry.songName || '')}</div>
             <div class="setlist-meta">
-              ${entry.duration ? `<span class="setlist-meta-item">${formatDuration(entry.duration)}</span>` : ''}
+              ${entry.duration ? `<span class="setlist-meta-item duration">${formatDuration(entry.duration)}</span>` : ''}
               ${entry.bpm ? `<span class="setlist-meta-item">${entry.bpm} BPM</span>` : ''}
               ${entry.key ? `<span class="setlist-meta-item">${_esc(entry.key)}</span>` : ''}
               ${entry.timecode ? `<span class="smpte">${formatSMPTE(entry.timecode)}</span>` : ''}
             </div>
             ${_renderRichNotes(entry)}
           </div>
+        </div>
+      `;
+    }
+
+    if (totalDuration > 0) {
+      html += `
+        <div class="setlist-total">
+          <span class="setlist-total-icon">&#128339;</span>
+          <span>${formatDurationHM(totalDuration)}</span>
         </div>
       `;
     }
