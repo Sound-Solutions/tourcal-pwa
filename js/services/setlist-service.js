@@ -114,13 +114,19 @@ class SetlistService {
   }
 
   parseRichNotes(entry) {
-    if (!entry.richNotes) return [];
-    if (Array.isArray(entry.richNotes)) return entry.richNotes;
-    try {
-      return JSON.parse(entry.richNotes);
-    } catch {
-      return [{ text: String(entry.richNotes), color: 'plain' }];
+    const rn = entry.richNotes;
+    if (!rn) return [];
+    if (Array.isArray(rn)) return rn;
+    if (rn.spans && Array.isArray(rn.spans)) return rn.spans;
+    if (typeof rn === 'string') {
+      try {
+        const parsed = JSON.parse(rn);
+        return Array.isArray(parsed) ? parsed : (parsed.spans || []);
+      } catch {
+        return [{ text: rn, color: 'plain' }];
+      }
     }
+    return [];
   }
 }
 

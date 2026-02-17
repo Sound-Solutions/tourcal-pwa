@@ -180,20 +180,30 @@ function _renderEntries(entries) {
 }
 
 function _renderRichNotes(entry) {
-  let notes = [];
-  if (entry.richNotes) {
-    if (Array.isArray(entry.richNotes)) {
-      notes = entry.richNotes;
-    } else {
-      try { notes = JSON.parse(entry.richNotes); } catch { notes = []; }
+  let spans = [];
+  const rn = entry.richNotes;
+  if (rn) {
+    if (Array.isArray(rn)) {
+      // Flat array of {text, color}
+      spans = rn;
+    } else if (rn.spans && Array.isArray(rn.spans)) {
+      // Swift encodes RichNotes as {spans: [...]}
+      spans = rn.spans;
+    } else if (typeof rn === 'string') {
+      try {
+        const parsed = JSON.parse(rn);
+        spans = Array.isArray(parsed) ? parsed : (parsed.spans || []);
+      } catch { /* ignore */ }
     }
   }
-  if (notes.length === 0) return '';
+  if (spans.length === 0) return '';
 
   let html = '<div class="setlist-notes">';
-  for (const span of notes) {
-    const colorClass = `note-span-${span.color || 'plain'}`;
-    html += `<span class="${colorClass}">${_esc(span.text)}</span>`;
+  for (const span of spans) {
+    const color = typeof span.color === 'string' ? span.color : 'plain';
+    const text = typeof span.text === 'string' ? span.text : '';
+    if (!text) continue;
+    html += `<span class="note-span-${color}">${_esc(text)}</span>`;
   }
   html += '</div>';
   return html;
