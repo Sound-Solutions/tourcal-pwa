@@ -1,4 +1,4 @@
-// Bus Stock View - Bus selector, date picker, stock items
+// Bus Stock View - Bus selector, date picker, stock items with add/edit
 
 import { tourService } from '../services/tour-service.js';
 import { busStockService } from '../services/busstock-service.js';
@@ -11,7 +11,8 @@ let _state = {
   selectedBusId: null,
   selectedDate: todayKey(),
   sheet: null,
-  tour: null
+  tour: null,
+  showAddForm: false
 };
 
 export async function renderBusStockView() {
@@ -24,6 +25,7 @@ export async function renderBusStockView() {
   }
 
   _state.tour = tour;
+  _state.showAddForm = false;
 
   content.innerHTML = `
     <div class="loading-container">
@@ -148,7 +150,7 @@ function _render(container) {
       <div class="empty-state" style="padding:32px">
         <div class="empty-state-icon">&#128230;</div>
         <h2 class="empty-state-title">No Items</h2>
-        <p class="empty-state-text">This sheet has no stock items.</p>
+        <p class="empty-state-text">Add items to this stock sheet.</p>
       </div>
     `;
   } else {
@@ -156,9 +158,39 @@ function _render(container) {
       <div class="empty-state" style="padding:32px">
         <div class="empty-state-icon">&#128203;</div>
         <h2 class="empty-state-title">No Sheet</h2>
-        <p class="empty-state-text">No stock sheet exists for this date.</p>
+        <p class="empty-state-text">No stock sheet for this date yet.</p>
+        ${editable ? `
+          <button class="btn btn-primary" id="create-sheet-btn" style="margin-top:12px">Create Sheet</button>
+          <button class="btn btn-text" id="create-from-defaults-btn" style="margin-top:8px">Load from Defaults</button>
+        ` : ''}
       </div>
     `;
+  }
+
+  // Add item button (when editable)
+  if (editable) {
+    if (_state.showAddForm) {
+      html += `
+        <div class="card" style="margin-top:16px;padding:16px">
+          <div style="font-weight:600;margin-bottom:12px">Add Item</div>
+          <input type="text" id="add-item-name" class="edit-time-input" placeholder="Item name" style="width:100%;margin-bottom:8px">
+          <div style="display:flex;gap:8px;margin-bottom:8px">
+            <input type="number" id="add-item-qty" class="edit-time-input" placeholder="Qty" value="1" min="0" style="width:80px">
+            <input type="text" id="add-item-brand" class="edit-time-input" placeholder="Brand (optional)" style="flex:1">
+          </div>
+          <div style="display:flex;gap:8px">
+            <button class="btn btn-primary" id="add-item-save" style="flex:1">Add</button>
+            <button class="btn btn-text" id="add-item-cancel">Cancel</button>
+          </div>
+        </div>
+      `;
+    } else {
+      html += `
+        <button class="btn btn-text" id="show-add-form" style="width:100%;margin-top:16px;padding:12px;border:1px dashed var(--separator);border-radius:10px;color:var(--system-blue)">
+          + Add Item
+        </button>
+      `;
+    }
   }
 
   html += '</div>';
@@ -173,6 +205,7 @@ function _bindEvents(container) {
   container.querySelectorAll('.bus-chip').forEach(chip => {
     chip.addEventListener('click', async () => {
       _state.selectedBusId = chip.dataset.busId;
+      _state.showAddForm = false;
       await _loadSheet();
       _render(container);
     });
@@ -183,6 +216,7 @@ function _bindEvents(container) {
   if (dateInput) {
     dateInput.addEventListener('change', async () => {
       _state.selectedDate = dateInput.value;
+      _state.showAddForm = false;
       await _loadSheet();
       _render(container);
     });
@@ -192,6 +226,7 @@ function _bindEvents(container) {
     const d = new Date(_state.selectedDate + 'T12:00:00');
     d.setDate(d.getDate() - 1);
     _state.selectedDate = formatDateISO(d);
+    _state.showAddForm = false;
     await _loadSheet();
     _render(container);
   });
@@ -200,11 +235,12 @@ function _bindEvents(container) {
     const d = new Date(_state.selectedDate + 'T12:00:00');
     d.setDate(d.getDate() + 1);
     _state.selectedDate = formatDateISO(d);
+    _state.showAddForm = false;
     await _loadSheet();
     _render(container);
   });
 
-  // Item interactions
+  // Item interactions (toggle, inc, dec)
   container.querySelectorAll('[data-action]').forEach(el => {
     el.addEventListener('click', async (e) => {
       e.stopPropagation();
@@ -223,9 +259,9 @@ function _bindEvents(container) {
         item.quantity = Math.max(0, (item.quantity || 0) - 1);
       }
 
-      // Save
       try {
-        await busStockService.saveSheet(_state.tour, _state.sheet);
+        const saved = await busStockService.saveSheet(_state.tour, _state.sheet);
+        _state.sheet.recordChangeTag = saved.recordChangeTag;
         _render(container);
       } catch (err) {
         showToast('Failed to save changes', 'error');
@@ -233,6 +269,140 @@ function _bindEvents(container) {
       }
     });
   });
+
+  // Create empty sheet
+  container.querySelector('#create-sheet-btn')?.addEventListener('click', async () => {
+    await _createSheet([]);
+    _render(container);
+  });
+
+  // Create sheet from defaults
+  container.querySelector('#create-from-defaults-btn')?.addEventListener('click', async () => {
+    try {
+      const defaults = await busStockService.fetchDefaults(_state.tour, _state.selectedBusId);
+      const items = defaults?.items?.map((item, i) => ({
+        id: _uuid(),
+        name: item.name || item.displayName || 'Item',
+        brand: item.brand || '',
+        size: item.size || '',
+        quantity: item.defaultQuantity || item.quantity || 1,
+        isChecked: item.enabledByDefault || false,
+        isFromDefaults: true,
+        order: i
+      })) || [];
+      await _createSheet(items);
+      _render(container);
+      if (items.length > 0) {
+        showToast(`Loaded ${items.length} items from defaults`);
+      } else {
+        showToast('No defaults found for this bus');
+      }
+    } catch (err) {
+      showToast('Failed to load defaults', 'error');
+      console.error('Defaults error:', err);
+    }
+  });
+
+  // Show add form
+  container.querySelector('#show-add-form')?.addEventListener('click', () => {
+    _state.showAddForm = true;
+    _render(container);
+    // Focus the name input
+    setTimeout(() => container.querySelector('#add-item-name')?.focus(), 50);
+  });
+
+  // Cancel add form
+  container.querySelector('#add-item-cancel')?.addEventListener('click', () => {
+    _state.showAddForm = false;
+    _render(container);
+  });
+
+  // Save new item
+  container.querySelector('#add-item-save')?.addEventListener('click', async () => {
+    await _addItem(container);
+  });
+
+  // Enter key in name field submits
+  container.querySelector('#add-item-name')?.addEventListener('keydown', async (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      await _addItem(container);
+    }
+  });
+}
+
+async function _createSheet(items) {
+  const sheet = {
+    busID: _state.selectedBusId,
+    tourID: _state.tour.recordName,
+    date: _state.selectedDate + 'T12:00:00',
+    items,
+    notes: '',
+    isLocked: false
+  };
+
+  try {
+    const saved = await busStockService.saveSheet(_state.tour, sheet);
+    _state.sheet = saved;
+  } catch (err) {
+    showToast('Failed to create sheet', 'error');
+    console.error('Create sheet error:', err);
+  }
+}
+
+async function _addItem(container) {
+  const nameInput = container.querySelector('#add-item-name');
+  const qtyInput = container.querySelector('#add-item-qty');
+  const brandInput = container.querySelector('#add-item-brand');
+
+  const name = nameInput?.value?.trim();
+  if (!name) {
+    showToast('Enter an item name');
+    nameInput?.focus();
+    return;
+  }
+
+  const quantity = parseInt(qtyInput?.value) || 1;
+  const brand = brandInput?.value?.trim() || '';
+
+  const newItem = {
+    id: _uuid(),
+    name,
+    brand,
+    size: '',
+    quantity,
+    isChecked: false,
+    isFromDefaults: false,
+    order: _state.sheet ? _state.sheet.items.length : 0
+  };
+
+  // Create sheet if it doesn't exist
+  if (!_state.sheet) {
+    await _createSheet([newItem]);
+  } else {
+    _state.sheet.items.push(newItem);
+    try {
+      const saved = await busStockService.saveSheet(_state.tour, _state.sheet);
+      _state.sheet.recordChangeTag = saved.recordChangeTag;
+    } catch (err) {
+      showToast('Failed to add item', 'error');
+      console.error('Add item error:', err);
+      _state.sheet.items.pop(); // rollback
+      return;
+    }
+  }
+
+  _state.showAddForm = false;
+  _render(container);
+  showToast(`Added "${name}"`);
+}
+
+function _uuid() {
+  return crypto.randomUUID ? crypto.randomUUID() :
+    'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
+      const r = Math.random() * 16 | 0;
+      return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16);
+    });
 }
 
 function _esc(str) {
