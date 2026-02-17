@@ -112,6 +112,39 @@ class BusStockService {
     return this._parseSheet(saved);
   }
 
+  async saveDefaults(tour, busId, items) {
+    const recordName = `defaults-${busId}`;
+
+    // Try to fetch existing defaults to get recordChangeTag
+    let existingTag = null;
+    try {
+      const existing = await lookupRecord(tour, recordName);
+      if (existing && !existing.serverErrorCode) {
+        existingTag = existing.recordChangeTag;
+      }
+    } catch (e) { /* new defaults */ }
+
+    const fields = {
+      busID: { value: busId },
+      tourID: { value: tour.recordName },
+      lastUpdated: { value: Date.now() },
+      itemsJSON: { value: JSON.stringify(items) }
+    };
+
+    const record = {
+      recordType: 'BusStockDefaults',
+      recordName,
+      fields
+    };
+
+    if (existingTag) {
+      record.recordChangeTag = existingTag;
+    }
+
+    const saved = await saveRecord(tour, record);
+    return this._parseDefaults(saved);
+  }
+
   isSheetLocked(sheet) {
     if (!sheet) return false;
     if (sheet.isLocked) return true;

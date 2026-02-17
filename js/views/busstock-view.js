@@ -136,10 +136,14 @@ function _render(container) {
       html += '<div class="card">';
 
       for (const item of items) {
+        const subtitle = [item.brand, item.size].filter(Boolean).join(' · ');
         html += `
           <div class="check-item" data-item-id="${item.id}">
             <div class="check-box ${item.isChecked ? 'checked' : ''}" data-action="toggle" data-item-id="${item.id}" ${!editable ? 'style="pointer-events:none;opacity:0.5"' : ''}></div>
-            <span class="check-item-name">${_esc(item.name)}</span>
+            <div class="check-item-info">
+              <span class="check-item-name">${_esc(item.name)}</span>
+              ${subtitle ? `<span class="check-item-subtitle">${_esc(subtitle)}</span>` : ''}
+            </div>
             <div class="check-item-qty">
               ${editable ? `<button class="qty-btn" data-action="dec" data-item-id="${item.id}">&minus;</button>` : ''}
               <span class="qty-value">${item.quantity || 0}</span>
@@ -188,6 +192,11 @@ function _render(container) {
             <input type="number" id="add-item-qty" class="edit-time-input" placeholder="Qty" value="1" min="0" style="width:80px">
             <input type="text" id="add-item-brand" class="edit-time-input" placeholder="Brand (optional)" style="flex:1">
           </div>
+          <input type="text" id="add-item-size" class="edit-time-input" placeholder="Size (optional, e.g. Case of 24, 12oz)" style="width:100%;margin-bottom:8px">
+          <label style="display:flex;align-items:center;gap:8px;margin-bottom:12px;font-size:14px;color:var(--text-secondary);cursor:pointer">
+            <input type="checkbox" id="add-item-defaults" style="width:18px;height:18px">
+            Also add to defaults
+          </label>
           <div style="display:flex;gap:8px">
             <button class="btn btn-primary" id="add-item-save" style="flex:1">Add</button>
             <button class="btn btn-text" id="add-item-cancel">Cancel</button>
@@ -368,6 +377,8 @@ async function _addItem(container) {
   const nameInput = container.querySelector('#add-item-name');
   const qtyInput = container.querySelector('#add-item-qty');
   const brandInput = container.querySelector('#add-item-brand');
+  const sizeInput = container.querySelector('#add-item-size');
+  const defaultsCheck = container.querySelector('#add-item-defaults');
 
   const name = nameInput?.value?.trim();
   if (!name) {
@@ -378,12 +389,14 @@ async function _addItem(container) {
 
   const quantity = parseInt(qtyInput?.value) || 1;
   const brand = brandInput?.value?.trim() || '';
+  const size = sizeInput?.value?.trim() || '';
+  const addToDefaults = defaultsCheck?.checked || false;
 
   const newItem = {
     id: _uuid(),
     name,
     brand,
-    size: '',
+    size,
     quantity,
     isChecked: false,
     isFromDefaults: false,
@@ -406,9 +419,32 @@ async function _addItem(container) {
     }
   }
 
+  // Add to defaults if requested
+  if (addToDefaults) {
+    try {
+      const existing = await busStockService.fetchDefaults(_state.tour, _state.selectedBusId);
+      const defaultItems = existing?.items || [];
+      defaultItems.push({
+        id: _uuid(),
+        name,
+        brand,
+        size,
+        defaultQuantity: quantity,
+        enabledByDefault: false,
+        order: defaultItems.length
+      });
+      await busStockService.saveDefaults(_state.tour, _state.selectedBusId, defaultItems);
+      showToast(`Added "${name}" + saved to defaults`);
+    } catch (err) {
+      console.error('Save defaults error:', err);
+      showToast(`Added "${name}" (defaults save failed)`, 'error');
+    }
+  } else {
+    showToast(`Added "${name}"`);
+  }
+
   _state.showAddForm = false;
   _render(container);
-  showToast(`Added "${name}"`);
 }
 
 function _uuid() {
