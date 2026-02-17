@@ -1,47 +1,36 @@
-// Event Service - TourEvent CRUD
+// Event Service - TourEvent CRUD (REST API)
 
 import { tourService } from './tour-service.js';
 import { cache } from './cache.js';
+import { queryRecords, lookupRecord, saveRecord, tourFilter } from './cloudkit-api.js';
 
 class EventService {
   async fetchEvents(tour) {
     if (!tour) return [];
 
-    const db = tourService.getDB(tour);
-    const zone = tourService.getZoneID(tour);
-
     try {
-      const response = await db.performQuery({
-        recordType: 'TourEvent',
-        filterBy: [{
-          fieldName: 'tourID',
-          comparator: 'EQUALS',
-          fieldValue: { value: tourService.getTourRef(tour) }
-        }],
-        sortBy: [{ fieldName: 'startDate', ascending: true }],
-        zoneID: zone
+      // Query all TourEvent records for this tour
+      const records = await queryRecords(tour, 'TourEvent', {
+        filterBy: [tourFilter(tour)],
+        sortBy: [{ fieldName: 'startDate', ascending: true }]
       });
 
-      const events = (response.records || []).map(r => this._parseEvent(r));
+      const events = records
+        .filter(r => !r.serverErrorCode)
+        .map(r => this._parseEvent(r));
 
-      // Cache
       await cache.put(cache.tourKey(tour.recordName, 'events'), events);
-
       return events;
     } catch (e) {
       console.warn('Error fetching events:', e);
-      // Try cache
       const cached = await cache.get(cache.tourKey(tour.recordName, 'events'), true);
       return cached || [];
     }
   }
 
   async saveEvent(tour, event) {
-    const db = tourService.getDB(tour);
-    const zone = tourService.getZoneID(tour);
-
     const fields = {
-      tourID: { value: tourService.getTourRef(tour) },
+      tourID: { value: { recordName: tour.recordName, action: 'DELETE_SELF' } },
       summary: { value: event.summary || '' },
       startDate: { value: event.startDate?.getTime() || Date.now() },
       endDate: { value: event.endDate?.getTime() || Date.now() },
@@ -56,8 +45,7 @@ class EventService {
 
     const record = {
       recordType: 'TourEvent',
-      fields,
-      zoneID: zone
+      fields
     };
 
     if (event.recordName) {
@@ -65,11 +53,8 @@ class EventService {
       record.recordChangeTag = event.recordChangeTag;
     }
 
-    const response = await db.saveRecords([record]);
-    if (response.records && response.records.length > 0) {
-      return this._parseEvent(response.records[0]);
-    }
-    throw new Error('Failed to save event');
+    const saved = await saveRecord(tour, record);
+    return this._parseEvent(saved);
   }
 
   _parseEvent(record) {
@@ -103,18 +88,16 @@ class EventService {
       artistID: f.artistID?.value || '',
       createdAt: f.createdAt?.value ? new Date(f.createdAt.value) : null,
       updatedAt: f.updatedAt?.value ? new Date(f.updatedAt.value) : null,
-      // Generate event key for daysheet/setlist linkage
       eventKey: this._generateEventKey(record.recordName, startDate)
     };
   }
 
   _generateEventKey(recordName, startDate) {
     if (!recordName || !startDate) return recordName || '';
-    const dateStr = startDate.toISOString().split('T')[0]; // yyyy-MM-dd
+    const dateStr = startDate.toISOString().split('T')[0];
     return `tour-${recordName}-${dateStr}`;
   }
 
-  // Group events by date
   groupByDate(events) {
     const groups = new Map();
     for (const event of events) {

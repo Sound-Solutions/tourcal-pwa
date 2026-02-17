@@ -1,28 +1,22 @@
-// Bus Stock Service - Buses, sheets, defaults
+// Bus Stock Service - Buses, sheets, defaults (REST API)
 
 import { tourService } from './tour-service.js';
 import { cache } from './cache.js';
+import { queryRecords, lookupRecord, saveRecord, tourFilter, stringFilter } from './cloudkit-api.js';
 
 class BusStockService {
   async fetchBuses(tour) {
     if (!tour) return [];
 
-    const db = tourService.getDB(tour);
-    const zone = tourService.getZoneID(tour);
-
     try {
-      const response = await db.performQuery({
-        recordType: 'Bus',
-        filterBy: [{
-          fieldName: 'tourID',
-          comparator: 'EQUALS',
-          fieldValue: { value: tourService.getTourRef(tour) }
-        }],
-        sortBy: [{ fieldName: 'order', ascending: true }],
-        zoneID: zone
+      const records = await queryRecords(tour, 'Bus', {
+        filterBy: [tourFilter(tour)],
+        sortBy: [{ fieldName: 'order', ascending: true }]
       });
 
-      const buses = (response.records || []).map(r => this._parseBus(r));
+      const buses = records
+        .filter(r => !r.serverErrorCode)
+        .map(r => this._parseBus(r));
       await cache.put(cache.tourKey(tour.recordName, 'buses'), buses);
       return buses;
     } catch (e) {
@@ -35,19 +29,13 @@ class BusStockService {
   async fetchSheet(tour, busId, date) {
     if (!tour || !busId || !date) return null;
 
-    const db = tourService.getDB(tour);
-    const zone = tourService.getZoneID(tour);
     const dateStr = this._formatDate(date);
     const recordName = `bus-${busId}-${dateStr}`;
 
     try {
-      const response = await db.fetchRecords([{
-        recordName,
-        zoneID: zone
-      }]);
-
-      if (response.records && response.records.length > 0) {
-        return this._parseSheet(response.records[0]);
+      const record = await lookupRecord(tour, recordName);
+      if (record && !record.serverErrorCode) {
+        return this._parseSheet(record);
       }
     } catch (e) {
       // Sheet may not exist
@@ -58,22 +46,15 @@ class BusStockService {
   async fetchSheetsForBus(tour, busId) {
     if (!tour || !busId) return [];
 
-    const db = tourService.getDB(tour);
-    const zone = tourService.getZoneID(tour);
-
     try {
-      const response = await db.performQuery({
-        recordType: 'BusStockSheet',
-        filterBy: [{
-          fieldName: 'busID',
-          comparator: 'EQUALS',
-          fieldValue: { value: busId }
-        }],
-        sortBy: [{ fieldName: 'date', ascending: false }],
-        zoneID: zone
+      const records = await queryRecords(tour, 'BusStockSheet', {
+        filterBy: [stringFilter('busID', busId)],
+        sortBy: [{ fieldName: 'date', ascending: false }]
       });
 
-      return (response.records || []).map(r => this._parseSheet(r));
+      return records
+        .filter(r => !r.serverErrorCode)
+        .map(r => this._parseSheet(r));
     } catch (e) {
       console.warn('Error fetching sheets for bus:', e);
       return [];
@@ -83,17 +64,10 @@ class BusStockService {
   async fetchDefaults(tour, busId) {
     if (!tour || !busId) return null;
 
-    const db = tourService.getDB(tour);
-    const zone = tourService.getZoneID(tour);
-
     try {
-      const response = await db.fetchRecords([{
-        recordName: `defaults-${busId}`,
-        zoneID: zone
-      }]);
-
-      if (response.records && response.records.length > 0) {
-        return this._parseDefaults(response.records[0]);
+      const record = await lookupRecord(tour, `defaults-${busId}`);
+      if (record && !record.serverErrorCode) {
+        return this._parseDefaults(record);
       }
     } catch (e) {
       // Defaults may not exist
@@ -102,8 +76,6 @@ class BusStockService {
   }
 
   async saveSheet(tour, sheet) {
-    const db = tourService.getDB(tour);
-    const zone = tourService.getZoneID(tour);
     const dateStr = this._formatDate(new Date(sheet.date));
 
     const fields = {
@@ -128,27 +100,21 @@ class BusStockService {
     const record = {
       recordType: 'BusStockSheet',
       recordName: `bus-${sheet.busID}-${dateStr}`,
-      fields,
-      zoneID: zone
+      fields
     };
 
     if (sheet.recordChangeTag) {
       record.recordChangeTag = sheet.recordChangeTag;
     }
 
-    const response = await db.saveRecords([record]);
-    if (response.records && response.records.length > 0) {
-      return this._parseSheet(response.records[0]);
-    }
-    throw new Error('Failed to save sheet');
+    const saved = await saveRecord(tour, record);
+    return this._parseSheet(saved);
   }
 
-  // Check if sheet is locked (manual or schedule)
   isSheetLocked(sheet) {
     if (!sheet) return false;
     if (sheet.isLocked) return true;
 
-    // Check lock schedule
     if (sheet.lockSchedule) {
       return this._isLockedBySchedule(sheet.lockSchedule, new Date(), sheet.date);
     }
@@ -159,14 +125,13 @@ class BusStockService {
   _isLockedBySchedule(schedule, now, sheetDate) {
     if (!schedule || !schedule.lockTime) return false;
 
-    const sheetDay = new Date(sheetDate).getDay(); // 0=Sunday
+    const sheetDay = new Date(sheetDate).getDay();
     if (schedule.daysToLock && !schedule.daysToLock.includes(sheetDay)) {
       return false;
     }
 
     const [lockH, lockM] = schedule.lockTime.split(':').map(Number);
     const lockMinutes = lockH * 60 + lockM;
-
     const nowMinutes = now.getHours() * 60 + now.getMinutes();
 
     if (schedule.unlockTime) {
@@ -247,7 +212,6 @@ class BusStockService {
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
   }
 
-  // Group items by category
   groupByCategory(items) {
     const groups = new Map();
     for (const item of items) {
@@ -255,7 +219,6 @@ class BusStockService {
       if (!groups.has(cat)) groups.set(cat, []);
       groups.get(cat).push(item);
     }
-    // Sort items within each group
     for (const [, items] of groups) {
       items.sort((a, b) => (a.order || 0) - (b.order || 0));
     }

@@ -1,28 +1,32 @@
-// Announcement Service - TourAnnouncement fetch
+// Announcement Service - TourAnnouncement fetch (REST API)
 
 import { tourService } from './tour-service.js';
 import { cache } from './cache.js';
+import { queryRecords } from './cloudkit-api.js';
 
 class AnnouncementService {
   async fetchAnnouncements(tour) {
     if (!tour) return [];
 
-    const db = tourService.getDB(tour);
-    const zone = tourService.getZoneID(tour);
-
     try {
-      const response = await db.performQuery({
-        recordType: 'TourAnnouncement',
+      // Use tourReference field (not tourID) for announcements
+      const records = await queryRecords(tour, 'TourAnnouncement', {
         filterBy: [{
-          fieldName: 'tourReference',
           comparator: 'EQUALS',
-          fieldValue: { value: tourService.getTourRef(tour) }
+          fieldName: 'tourReference',
+          fieldValue: {
+            value: {
+              recordName: tour.recordName,
+              action: 'NONE'
+            }
+          }
         }],
-        sortBy: [{ fieldName: 'createdAt', ascending: false }],
-        zoneID: zone
+        sortBy: [{ fieldName: 'createdAt', ascending: false }]
       });
 
-      const announcements = (response.records || []).map(r => this._parseAnnouncement(r));
+      const announcements = records
+        .filter(r => !r.serverErrorCode)
+        .map(r => this._parseAnnouncement(r));
       await cache.put(cache.tourKey(tour.recordName, 'announcements'), announcements);
       return announcements;
     } catch (e) {
@@ -56,7 +60,6 @@ class AnnouncementService {
     };
   }
 
-  // Filter announcements visible to a role
   filterForRole(announcements, role) {
     return announcements.filter(a => {
       if (!a.targetRoles || a.targetRoles.length === 0) return true;

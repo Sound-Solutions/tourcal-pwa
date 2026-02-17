@@ -1,41 +1,31 @@
-// Crew Service - CrewMember + Department
+// Crew Service - CrewMember + Department (REST API)
 
 import { tourService } from './tour-service.js';
 import { cache } from './cache.js';
+import { queryRecords, tourFilter } from './cloudkit-api.js';
 
 class CrewService {
   async fetchCrew(tour) {
     if (!tour) return { members: [], departments: [] };
 
-    const db = tourService.getDB(tour);
-    const zone = tourService.getZoneID(tour);
-
     try {
-      const [membersResp, deptsResp] = await Promise.all([
-        db.performQuery({
-          recordType: 'CrewMember',
-          filterBy: [{
-            fieldName: 'tourID',
-            comparator: 'EQUALS',
-            fieldValue: { value: tourService.getTourRef(tour) }
-          }],
-          sortBy: [{ fieldName: 'order', ascending: true }],
-          zoneID: zone
+      const [memberRecords, deptRecords] = await Promise.all([
+        queryRecords(tour, 'CrewMember', {
+          filterBy: [tourFilter(tour)],
+          sortBy: [{ fieldName: 'order', ascending: true }]
         }),
-        db.performQuery({
-          recordType: 'Department',
-          filterBy: [{
-            fieldName: 'tourID',
-            comparator: 'EQUALS',
-            fieldValue: { value: tourService.getTourRef(tour) }
-          }],
-          sortBy: [{ fieldName: 'order', ascending: true }],
-          zoneID: zone
+        queryRecords(tour, 'Department', {
+          filterBy: [tourFilter(tour)],
+          sortBy: [{ fieldName: 'order', ascending: true }]
         })
       ]);
 
-      const members = (membersResp.records || []).map(r => this._parseMember(r));
-      const departments = (deptsResp.records || []).map(r => this._parseDepartment(r));
+      const members = memberRecords
+        .filter(r => !r.serverErrorCode)
+        .map(r => this._parseMember(r));
+      const departments = deptRecords
+        .filter(r => !r.serverErrorCode)
+        .map(r => this._parseDepartment(r));
 
       const result = { members, departments };
       await cache.put(cache.tourKey(tour.recordName, 'crew'), result);
@@ -75,7 +65,6 @@ class CrewService {
     };
   }
 
-  // Group members by department
   groupByDepartment(members, departments) {
     const deptMap = new Map();
     for (const dept of departments) {
@@ -97,7 +86,6 @@ class CrewService {
       }
     }
 
-    // Sort groups by department order
     const sorted = [...groups.values()].sort(
       (a, b) => (a.department.order || 0) - (b.department.order || 0)
     );

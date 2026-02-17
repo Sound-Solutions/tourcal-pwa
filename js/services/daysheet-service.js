@@ -1,27 +1,21 @@
-// DaySheet Service - Fetch/Save day sheets
+// DaySheet Service - Fetch/Save day sheets (REST API)
 
 import { tourService } from './tour-service.js';
 import { cache } from './cache.js';
+import { queryRecords, lookupRecord, saveRecord, tourFilter } from './cloudkit-api.js';
 
 class DaySheetService {
   async fetchDaySheets(tour) {
     if (!tour) return [];
 
-    const db = tourService.getDB(tour);
-    const zone = tourService.getZoneID(tour);
-
     try {
-      const response = await db.performQuery({
-        recordType: 'DaySheet',
-        filterBy: [{
-          fieldName: 'tourID',
-          comparator: 'EQUALS',
-          fieldValue: { value: tourService.getTourRef(tour) }
-        }],
-        zoneID: zone
+      const records = await queryRecords(tour, 'DaySheet', {
+        filterBy: [tourFilter(tour)]
       });
 
-      const sheets = (response.records || []).map(r => this._parseDaySheet(r));
+      const sheets = records
+        .filter(r => !r.serverErrorCode)
+        .map(r => this._parseDaySheet(r));
       await cache.put(cache.tourKey(tour.recordName, 'daysheets'), sheets);
       return sheets;
     } catch (e) {
@@ -34,18 +28,10 @@ class DaySheetService {
   async fetchDaySheet(tour, eventKey) {
     if (!tour || !eventKey) return null;
 
-    const db = tourService.getDB(tour);
-    const zone = tourService.getZoneID(tour);
-    const recordName = `daySheet-${eventKey}`;
-
     try {
-      const response = await db.fetchRecords([{
-        recordName,
-        zoneID: zone
-      }]);
-
-      if (response.records && response.records.length > 0) {
-        return this._parseDaySheet(response.records[0]);
+      const record = await lookupRecord(tour, `daySheet-${eventKey}`);
+      if (record && !record.serverErrorCode) {
+        return this._parseDaySheet(record);
       }
     } catch (e) {
       // Record may not exist yet
@@ -54,11 +40,8 @@ class DaySheetService {
   }
 
   async saveDaySheet(tour, daysheet) {
-    const db = tourService.getDB(tour);
-    const zone = tourService.getZoneID(tour);
-
     const fields = {
-      tourID: { value: tourService.getTourRef(tour) },
+      tourID: { value: { recordName: tour.recordName, action: 'DELETE_SELF' } },
       eventKey: { value: daysheet.eventKey },
       notes: { value: daysheet.notes || '' },
       lastUpdated: { value: Date.now() }
@@ -83,19 +66,15 @@ class DaySheetService {
     const record = {
       recordType: 'DaySheet',
       recordName: `daySheet-${daysheet.eventKey}`,
-      fields,
-      zoneID: zone
+      fields
     };
 
     if (daysheet.recordChangeTag) {
       record.recordChangeTag = daysheet.recordChangeTag;
     }
 
-    const response = await db.saveRecords([record]);
-    if (response.records && response.records.length > 0) {
-      return this._parseDaySheet(response.records[0]);
-    }
-    throw new Error('Failed to save day sheet');
+    const saved = await saveRecord(tour, record);
+    return this._parseDaySheet(saved);
   }
 
   _parseDaySheet(record) {
@@ -137,7 +116,6 @@ class DaySheetService {
     };
   }
 
-  // Get standard schedule items from a daysheet
   getScheduleItems(daysheet) {
     if (!daysheet) return [];
 
@@ -153,7 +131,6 @@ class DaySheetService {
     add('Show Time', daysheet.showTime, daysheet.showTimeEnd);
     add('Curfew', daysheet.curfew, daysheet.curfewEnd);
 
-    // Add custom items
     if (daysheet.customItems) {
       for (const item of daysheet.customItems) {
         if (item.isEnabled !== false) {
@@ -166,7 +143,6 @@ class DaySheetService {
       }
     }
 
-    // Sort by start time
     items.sort((a, b) => {
       if (!a.startTime) return 1;
       if (!b.startTime) return -1;

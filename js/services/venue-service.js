@@ -1,27 +1,21 @@
-// Venue Service - VenueNote CRUD
+// Venue Service - VenueNote CRUD (REST API)
 
 import { tourService } from './tour-service.js';
 import { cache } from './cache.js';
+import { queryRecords, lookupRecord, saveRecord, tourFilter } from './cloudkit-api.js';
 
 class VenueService {
   async fetchVenueNotes(tour) {
     if (!tour) return [];
 
-    const db = tourService.getDB(tour);
-    const zone = tourService.getZoneID(tour);
-
     try {
-      const response = await db.performQuery({
-        recordType: 'VenueNote',
-        filterBy: [{
-          fieldName: 'tourID',
-          comparator: 'EQUALS',
-          fieldValue: { value: tourService.getTourRef(tour) }
-        }],
-        zoneID: zone
+      const records = await queryRecords(tour, 'VenueNote', {
+        filterBy: [tourFilter(tour)]
       });
 
-      const notes = (response.records || []).map(r => this._parseVenueNote(r));
+      const notes = records
+        .filter(r => !r.serverErrorCode)
+        .map(r => this._parseVenueNote(r));
       await cache.put(cache.tourKey(tour.recordName, 'venueNotes'), notes);
       return notes;
     } catch (e) {
@@ -34,17 +28,10 @@ class VenueService {
   async fetchVenueNote(tour, venueKey) {
     if (!tour || !venueKey) return null;
 
-    const db = tourService.getDB(tour);
-    const zone = tourService.getZoneID(tour);
-
     try {
-      const response = await db.fetchRecords([{
-        recordName: `venueNote-${venueKey}`,
-        zoneID: zone
-      }]);
-
-      if (response.records && response.records.length > 0) {
-        return this._parseVenueNote(response.records[0]);
+      const record = await lookupRecord(tour, `venueNote-${venueKey}`);
+      if (record && !record.serverErrorCode) {
+        return this._parseVenueNote(record);
       }
     } catch (e) {
       // May not exist
@@ -53,11 +40,8 @@ class VenueService {
   }
 
   async saveVenueNote(tour, venueNote) {
-    const db = tourService.getDB(tour);
-    const zone = tourService.getZoneID(tour);
-
     const fields = {
-      tourID: { value: tourService.getTourRef(tour) },
+      tourID: { value: { recordName: tour.recordName, action: 'DELETE_SELF' } },
       venueKey: { value: venueNote.venueKey },
       venueName: { value: venueNote.venueName || '' },
       wifiNetwork: { value: venueNote.wifiNetwork || '' },
@@ -73,19 +57,15 @@ class VenueService {
     const record = {
       recordType: 'VenueNote',
       recordName: `venueNote-${venueNote.venueKey}`,
-      fields,
-      zoneID: zone
+      fields
     };
 
     if (venueNote.recordChangeTag) {
       record.recordChangeTag = venueNote.recordChangeTag;
     }
 
-    const response = await db.saveRecords([record]);
-    if (response.records && response.records.length > 0) {
-      return this._parseVenueNote(response.records[0]);
-    }
-    throw new Error('Failed to save venue note');
+    const saved = await saveRecord(tour, record);
+    return this._parseVenueNote(saved);
   }
 
   _parseVenueNote(record) {
@@ -106,7 +86,6 @@ class VenueService {
     };
   }
 
-  // Generate venue key from venue name
   generateVenueKey(venueName) {
     return (venueName || '')
       .toLowerCase()
