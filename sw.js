@@ -1,6 +1,6 @@
 // TourCal PWA - Service Worker
 
-const CACHE_NAME = 'tourcal-v31';
+const CACHE_NAME = 'tourcal-v32';
 const APP_SHELL = [
   './',
   './index.html',
@@ -66,7 +66,7 @@ self.addEventListener('activate', (event) => {
   self.clients.claim();
 });
 
-// Fetch - network first for API, cache first for app shell
+// Fetch - network first, fallback to cache (for offline support)
 self.addEventListener('fetch', (event) => {
   const url = new URL(event.request.url);
 
@@ -75,34 +75,19 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // App shell: cache first, fallback to network
+  // Network first, cache fallback
   event.respondWith(
-    caches.match(event.request).then((cached) => {
-      if (cached) {
-        // Return cache and update in background
-        const fetchPromise = fetch(event.request).then((response) => {
-          if (response.ok) {
-            const responseClone = response.clone();
-            caches.open(CACHE_NAME).then((cache) => {
-              cache.put(event.request, responseClone);
-            });
-          }
-          return response;
-        }).catch(() => {});
-
-        return cached;
+    fetch(event.request).then((response) => {
+      if (response.ok && event.request.method === 'GET') {
+        const responseClone = response.clone();
+        caches.open(CACHE_NAME).then((cache) => {
+          cache.put(event.request, responseClone);
+        });
       }
-
-      // Not in cache: try network
-      return fetch(event.request).then((response) => {
-        if (response.ok && event.request.method === 'GET') {
-          const responseClone = response.clone();
-          caches.open(CACHE_NAME).then((cache) => {
-            cache.put(event.request, responseClone);
-          });
-        }
-        return response;
-      });
+      return response;
+    }).catch(() => {
+      // Network failed - serve from cache (offline support)
+      return caches.match(event.request);
     })
   );
 });
