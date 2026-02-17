@@ -36,21 +36,44 @@
   line-height: 1.4;
 }
 
+/* Hide CloudKit's broken SVG button, keep it for its click handler */
 #apple-sign-in-button {
+  position: relative;
   display: flex;
   justify-content: center;
 }
 
-.apple-auth-button {
-  overflow: visible !important;
-  border-radius: 12px !important;
-  border-color: rgba(255,255,255,0.2) !important;
-  height: 48px !important;
+#apple-sign-in-button .apple-auth-button {
+  position: absolute !important;
+  opacity: 0 !important;
   width: 260px !important;
-  transition: opacity 0.2s;
+  height: 48px !important;
+  cursor: pointer;
+  z-index: 2;
 }
 
-.apple-auth-button:hover {
+/* Our own clean button overlay */
+#apple-sign-in-label {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  background: white;
+  color: black;
+  font-size: 17px;
+  font-weight: 500;
+  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', sans-serif;
+  padding: 12px 32px;
+  border-radius: 12px;
+  min-width: 240px;
+  height: 48px;
+  box-sizing: border-box;
+  cursor: pointer;
+  transition: opacity 0.2s;
+  pointer-events: none;
+}
+
+#apple-sign-in-button:hover #apple-sign-in-label {
   opacity: 0.85;
 }
 
