@@ -129,7 +129,7 @@ function _render(container) {
         html += `
           <div class="check-item" data-item-id="${item.id}">
             <div class="check-box ${item.isChecked ? 'checked' : ''}" data-action="toggle" data-item-id="${item.id}" ${!editable ? 'style="pointer-events:none;opacity:0.5"' : ''}></div>
-            <span class="check-item-name ${item.isChecked ? 'checked' : ''}">${_esc(item.name)}</span>
+            <span class="check-item-name ${!item.isChecked ? 'checked' : ''}">${_esc(item.name)}</span>
             <div class="check-item-qty">
               ${editable ? `<button class="qty-btn" data-action="dec" data-item-id="${item.id}">&minus;</button>` : ''}
               <span class="qty-value">${item.quantity || 0}</span>
