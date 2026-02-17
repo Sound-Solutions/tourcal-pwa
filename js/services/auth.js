@@ -125,6 +125,22 @@ class AuthService {
       });
     }
 
+    // Force same-window redirect instead of CloudKit JS opening a popup tab.
+    // CloudKit JS calls window.open() for Apple sign-in; we intercept it
+    // so the auth flow stays in the same window for better UX.
+    if (!window._ckOpenPatched) {
+      const originalOpen = window.open;
+      window.open = function(url, ...args) {
+        if (url && typeof url === 'string' && url.includes('apple.com') && url.includes('auth')) {
+          console.log('[Auth] Redirecting to Apple sign-in (same window)');
+          window.location.href = url;
+          return null;
+        }
+        return originalOpen.call(this, url, ...args);
+      };
+      window._ckOpenPatched = true;
+    }
+
     try {
       await container.setUpAuth();
     } catch (e) {
