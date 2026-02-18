@@ -1,6 +1,7 @@
 // Crew Service - CrewMember + Department (REST API)
 
 import { tourService } from './tour-service.js';
+import { authService } from './auth.js';
 import { cache } from './cache.js';
 import { queryRecords, tourFilter } from './cloudkit-api.js';
 
@@ -39,6 +40,12 @@ class CrewService {
 
   _parseMember(record) {
     const f = record.fields || {};
+
+    let overrides = null;
+    if (f.permissionOverridesJSON?.value) {
+      try { overrides = JSON.parse(f.permissionOverridesJSON.value); } catch (e) {}
+    }
+
     return {
       recordName: record.recordName,
       recordChangeTag: record.recordChangeTag,
@@ -49,8 +56,19 @@ class CrewService {
       departmentID: f.departmentID?.value || '',
       assignedBusID: f.assignedBusID?.value || '',
       role: f.role?.value || '',
-      order: f.order?.value || 0
+      order: f.order?.value || 0,
+      inviteToken: f.inviteToken?.value || '',
+      userRecordName: f.userRecordName?.value || null,
+      claimedAt: f.claimedAt?.value ? new Date(f.claimedAt.value) : null,
+      permissionOverrides: overrides
     };
+  }
+
+  async findCurrentUserMember(tour) {
+    const { members } = await this.fetchCrew(tour);
+    const userRecordName = authService.userRecordName;
+    if (!userRecordName || userRecordName === '_pending_') return null;
+    return members.find(m => m.userRecordName === userRecordName) || null;
   }
 
   _parseDepartment(record) {

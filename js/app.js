@@ -14,6 +14,7 @@ import { renderBusStockView, renderBusStockSheetView } from './views/busstock-vi
 import { renderVenueNotesListView, renderVenueNoteDetailView } from './views/venue-notes-view.js';
 import { renderCrewView } from './views/crew-view.js';
 import { renderAnnouncementsView } from './views/announcements-view.js';
+import { renderInviteView } from './views/invite-view.js';
 import { showToast } from './components/toast.js';
 
 // Apply tour color theming
@@ -68,6 +69,9 @@ router
   }))
   .on('#/tours', requireAuth(async () => {
     await renderTourListView();
+  }))
+  .on('#/invite/:token', requireAuth(async (params) => {
+    await renderInviteView(params);
   }))
   .on('#/event/:id', requireTour(async (params) => {
     await renderEventDetailView(params);

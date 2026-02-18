@@ -67,6 +67,9 @@ class TourService {
     this._tours = tours.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
     this._lastErrors = errors;
 
+    // Enrich shared tour roles from CrewMember records
+    await this.enrichTourRoles(this._tours);
+
     // Cache tours
     await cache.put('tours', this._tours);
 
@@ -170,12 +173,62 @@ class TourService {
   }
 
   _detectRoleFromRecord(record) {
-    // Check for share participant permissions in the record
     if (record.share) {
+      // Check custom tourRole field first (set by new shares)
+      const tourRole = record.share.tourRole?.value || record.share.tourRole;
+      if (tourRole) {
+        console.log(`[TourService] Detected tourRole from share: ${tourRole}`);
+        return tourRole; // "Admin", "Crew Chief", "Crew", "Artist"
+      }
+      // Legacy fallback: permission-based detection
       const participant = record.share.currentUserParticipant;
       if (participant?.permission === 'READ_WRITE') return 'Admin';
     }
     return 'Crew';
+  }
+
+  async enrichTourRoles(tours) {
+    const userRecordName = authService.userRecordName;
+    if (!userRecordName || userRecordName === '_pending_') return;
+
+    for (const tour of tours) {
+      if (!tour.isShared) continue;
+      try {
+        const res = await authService.apiFetch('/shared/records/query', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            zoneID: tour.zoneID,
+            query: {
+              recordType: 'CrewMember',
+              filterBy: [{
+                comparator: 'EQUALS',
+                fieldName: 'userRecordName',
+                fieldValue: { value: userRecordName }
+              }]
+            }
+          })
+        });
+        const data = await res.json();
+        if (data.records?.length > 0) {
+          const f = data.records[0].fields || {};
+          const role = f.role?.value;
+          if (role) {
+            console.log(`[TourService] CrewMember role for ${tour.name}: ${role}`);
+            tour.role = role;
+            // Also store the crew member's permission overrides
+            let overrides = null;
+            if (f.permissionOverridesJSON?.value) {
+              try { overrides = JSON.parse(f.permissionOverridesJSON.value); } catch (e) {}
+            }
+            tour.permissionOverrides = overrides;
+            tour.crewMemberRecordName = data.records[0].recordName;
+          }
+        }
+      } catch (e) {
+        console.warn(`[TourService] Failed to detect CrewMember role for ${tour.name}:`, e);
+      }
+    }
   }
 
   _parseTour(record, isShared) {

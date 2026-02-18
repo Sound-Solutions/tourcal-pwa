@@ -10,7 +10,9 @@ const PERMISSIONS = {
     canEditCrew: true,
     canShareTour: true,
     canViewVenueNotes: true,
-    canViewTourSheets: true
+    canViewTourSheets: true,
+    canPostAnnouncements: true,
+    canLockBusStock: true
   },
   Admin: {
     canEditEvents: true,
@@ -21,7 +23,9 @@ const PERMISSIONS = {
     canEditCrew: true,
     canShareTour: true,
     canViewVenueNotes: true,
-    canViewTourSheets: true
+    canViewTourSheets: true,
+    canPostAnnouncements: true,
+    canLockBusStock: true
   },
   'Crew Chief': {
     canEditEvents: false,
@@ -32,7 +36,9 @@ const PERMISSIONS = {
     canEditCrew: false,
     canShareTour: false,
     canViewVenueNotes: true,
-    canViewTourSheets: true
+    canViewTourSheets: true,
+    canPostAnnouncements: true,
+    canLockBusStock: false
   },
   Crew: {
     canEditEvents: false,
@@ -43,7 +49,9 @@ const PERMISSIONS = {
     canEditCrew: false,
     canShareTour: false,
     canViewVenueNotes: true,
-    canViewTourSheets: true
+    canViewTourSheets: true,
+    canPostAnnouncements: false,
+    canLockBusStock: false
   },
   Artist: {
     canEditEvents: false,
@@ -54,7 +62,9 @@ const PERMISSIONS = {
     canEditCrew: false,
     canShareTour: false,
     canViewVenueNotes: false,
-    canViewTourSheets: false
+    canViewTourSheets: false,
+    canPostAnnouncements: false,
+    canLockBusStock: false
   }
 };
 
@@ -62,8 +72,20 @@ export function getPermissions(role) {
   return PERMISSIONS[role] || PERMISSIONS.Crew;
 }
 
-export function canEdit(role, type) {
-  const perms = getPermissions(role);
+export function resolvePermissions(role, permissionOverrides) {
+  const defaults = { ...getPermissions(role) };
+  if (permissionOverrides && typeof permissionOverrides === 'object') {
+    for (const [key, value] of Object.entries(permissionOverrides)) {
+      if (key in defaults && typeof value === 'boolean') {
+        defaults[key] = value;
+      }
+    }
+  }
+  return defaults;
+}
+
+export function canEdit(role, type, permissionOverrides) {
+  const perms = resolvePermissions(role, permissionOverrides);
   switch (type) {
     case 'events': return perms.canEditEvents;
     case 'daysheets': return perms.canEditDaySheets;
@@ -75,8 +97,8 @@ export function canEdit(role, type) {
   }
 }
 
-export function canView(role, type) {
-  const perms = getPermissions(role);
+export function canView(role, type, permissionOverrides) {
+  const perms = resolvePermissions(role, permissionOverrides);
   switch (type) {
     case 'venue': return perms.canViewVenueNotes;
     case 'toursheets': return perms.canViewTourSheets;
@@ -85,10 +107,19 @@ export function canView(role, type) {
 }
 
 // Check if crew can edit bus stock (must check lock status separately)
-export function canEditBusStock(role, sheetLocked) {
+export function canEditBusStock(role, sheetLocked, permissionOverrides) {
+  const perms = resolvePermissions(role, permissionOverrides);
+  if (!perms.canEditBusStock) return false;
   if (role === 'Owner' || role === 'Admin') return true;
-  if (role === 'Crew Chief' || role === 'Crew') return !sheetLocked;
-  return false;
+  return !sheetLocked;
+}
+
+export function canPostAnnouncements(role, permissionOverrides) {
+  return resolvePermissions(role, permissionOverrides).canPostAnnouncements;
+}
+
+export function canLockBusStock(role, permissionOverrides) {
+  return resolvePermissions(role, permissionOverrides).canLockBusStock;
 }
 
 export function isOwnerOrAdmin(role) {

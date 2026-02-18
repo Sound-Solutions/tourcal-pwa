@@ -3,7 +3,8 @@
 import { tourService } from '../services/tour-service.js';
 import { busStockService } from '../services/busstock-service.js';
 import { formatDateISO, formatDateShort, todayKey } from '../models/formatters.js';
-import { canEditBusStock } from '../models/permissions.js';
+import { canEditBusStock, isOwnerOrAdmin } from '../models/permissions.js';
+import { authService } from '../services/auth.js';
 import { showToast } from '../components/toast.js';
 
 const STORAGE_BUS_KEY = 'tourcal_busstock_busId';
@@ -98,6 +99,14 @@ function _render(container) {
   const role = tour.role;
   const locked = busStockService.isSheetLocked(sheet);
   const editable = canEditBusStock(role, locked);
+  const isAdmin = isOwnerOrAdmin(role);
+  const currentUser = authService.userRecordName;
+
+  function canDeleteItem(item) {
+    if (isAdmin) return true;
+    if (!item.createdBy) return true;  // legacy items (no createdBy) - allow delete
+    return item.createdBy === currentUser;
+  }
 
   let html = '<div class="busstock-view">';
 
@@ -136,7 +145,12 @@ function _render(container) {
       html += '<div class="card">';
 
       for (const item of items) {
-        const subtitle = [item.brand, item.size].filter(Boolean).join(' · ');
+        const subtitleParts = [item.brand, item.size].filter(Boolean);
+        if (isAdmin && item.createdBy) {
+          const addedByText = item.createdBy === currentUser ? 'You' : item.createdBy.substring(0, 8) + '...';
+          subtitleParts.push(`Added by ${addedByText}`);
+        }
+        const subtitle = subtitleParts.join(' \u00b7 ');
         html += `
           <div class="check-item" data-item-id="${item.id}">
             <div class="check-box ${item.isChecked ? 'checked' : ''}" data-action="toggle" data-item-id="${item.id}" ${!editable ? 'style="pointer-events:none;opacity:0.5"' : ''}></div>
@@ -148,6 +162,7 @@ function _render(container) {
               ${editable ? `<button class="qty-btn" data-action="dec" data-item-id="${item.id}">&minus;</button>` : ''}
               <span class="qty-value">${item.quantity || 0}</span>
               ${editable ? `<button class="qty-btn" data-action="inc" data-item-id="${item.id}">+</button>` : ''}
+              ${editable && canDeleteItem(item) ? `<button class="qty-btn" data-action="delete" data-item-id="${item.id}" style="color:var(--system-red);margin-left:4px" title="Remove item">\u2715</button>` : ''}
             </div>
           </div>
         `;
@@ -280,6 +295,9 @@ function _bindEvents(container) {
         item.quantity = (item.quantity || 0) + 1;
       } else if (action === 'dec') {
         item.quantity = Math.max(0, (item.quantity || 0) - 1);
+      } else if (action === 'delete') {
+        if (!confirm(`Remove "${item.name}" from the list?`)) return;
+        _state.sheet.items = _state.sheet.items.filter(i => i.id !== itemId);
       }
 
       try {
@@ -311,7 +329,8 @@ function _bindEvents(container) {
         quantity: item.defaultQuantity || item.quantity || 1,
         isChecked: item.enabledByDefault || false,
         isFromDefaults: true,
-        order: i
+        order: i,
+        createdBy: authService.userRecordName || null
       })) || [];
       await _createSheet(items);
       _render(container);
@@ -400,7 +419,8 @@ async function _addItem(container) {
     quantity,
     isChecked: false,
     isFromDefaults: false,
-    order: _state.sheet ? _state.sheet.items.length : 0
+    order: _state.sheet ? _state.sheet.items.length : 0,
+    createdBy: authService.userRecordName || null
   };
 
   // Create sheet if it doesn't exist
