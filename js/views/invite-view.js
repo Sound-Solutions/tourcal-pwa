@@ -24,9 +24,9 @@ export async function renderInviteView(params) {
     return;
   }
 
-  // Kick off identity resolution in the background — we'll wait for it before the claim step,
-  // but don't block here since /users/caller returns 400 for accounts with no private zone.
-  authService.resolveIdentityNow();
+  // Kick off identity resolution — don't block here since /users/caller can be slow,
+  // but we MUST await it before the claim step to avoid writing '_pending_'.
+  const identityPromise = authService.resolveIdentityNow();
 
   _showProgress(content, 'Looking up your invite...');
 
@@ -45,7 +45,12 @@ export async function renderInviteView(params) {
 
     // Step 2: Accept the CKShare (grants access to the shared zone)
     if (invite.shareURL) {
-      await _acceptShare(invite.shareURL);
+      const accepted = await _acceptShare(invite.shareURL);
+      if (!accepted) {
+        console.warn('[InviteView] Share acceptance returned failure — proceeding anyway (zone may already be accepted)');
+      }
+    } else {
+      console.warn('[InviteView] No shareURL in TourInvite — cannot accept share');
     }
 
     // Step 3: Find the CrewMember record in shared zones
@@ -55,14 +60,18 @@ export async function renderInviteView(params) {
         content,
         'Could Not Join',
         'The crew member record for this invite could not be found. ' +
-        'Make sure the tour owner has shared the tour with you first, then try again.'
+        'The shared zone may not have propagated yet — please wait a moment and try the link again.'
       );
       return;
     }
 
-    // Step 4: Check if already claimed
+    // Step 4: Wait for identity resolution before checking/writing userRecordName
+    await identityPromise;
+    await _waitForUserIdentity();
+
+    // Step 5: Check if already claimed
     const existingUser = crewMember.fields?.userRecordName?.value;
-    if (existingUser) {
+    if (existingUser && existingUser !== '_pending_') {
       if (existingUser === authService.userRecordName) {
         // Already claimed by this user - just redirect
         _showSuccess(content, tourName, roleName, true);
@@ -73,10 +82,19 @@ export async function renderInviteView(params) {
       return;
     }
 
-    // Step 5: Claim the CrewMember record
+    // Step 6: Claim the CrewMember record (identity must be resolved)
+    const myRecordName = authService.userRecordName;
+    if (!myRecordName || myRecordName === '_pending_') {
+      _showError(
+        content,
+        'Identity Not Resolved',
+        'Could not determine your Apple ID. Please sign out, sign back in, and try the invite link again.'
+      );
+      return;
+    }
     await _claimCrewMember(crewMember);
 
-    // Step 6: Show success and redirect
+    // Step 7: Show success and redirect
     _showSuccess(content, tourName, roleName, false);
     showToast(`Joined ${tourName} as ${roleName}`, 'info');
     await _refreshAndRedirect();
@@ -135,28 +153,43 @@ function _showSuccess(container, tourName, roleName, alreadyJoined) {
 
 /**
  * Wait for authService.userRecordName to resolve from '_pending_' to a real value.
- * Gives up after 5 seconds — accounts with no private CloudKit zone return 400 on
- * /users/caller and will never resolve via that endpoint. The claim step will
- * try a final resolution via the public DB query response.
+ * If still pending after initial wait, retries identity resolution once more.
+ * Gives up after ~8 seconds total.
  */
 async function _waitForUserIdentity() {
   if (authService.userRecordName && authService.userRecordName !== '_pending_') return;
 
+  // First pass: wait for any in-flight resolution to complete
   let attempts = 0;
   while (authService.userRecordName === '_pending_' && attempts < 10) {
     attempts++;
     await new Promise(r => setTimeout(r, 500));
   }
+
+  if (authService.userRecordName && authService.userRecordName !== '_pending_') return;
+
+  // Still pending — try one more explicit resolution attempt
+  console.log('[InviteView] Identity still pending after initial wait, retrying resolution...');
+  await authService.resolveIdentityNow();
+
+  // Final wait
+  attempts = 0;
+  while (authService.userRecordName === '_pending_' && attempts < 6) {
+    attempts++;
+    await new Promise(r => setTimeout(r, 500));
+  }
+
   if (authService.userRecordName === '_pending_') {
-    console.log('[InviteView] Identity still pending — will proceed and resolve via API calls');
+    console.warn('[InviteView] Identity could not be resolved after all attempts');
+  } else {
+    console.log('[InviteView] Identity resolved:', authService.userRecordName);
   }
 }
 
 /**
  * Accept a CKShare via the CloudKit REST API.
  * Uses POST /public/records/accept with the shortGUID extracted from the share URL.
- * This is more reliable than CloudKit JS because it uses the same auth token
- * as all other REST calls (CloudKit JS has no valid session for already-signed-in users).
+ * Returns true if accepted (or already accepted), false if the accept call failed.
  */
 async function _acceptShare(shareURL) {
   // Extract shortGUID from the share URL
@@ -167,13 +200,13 @@ async function _acceptShare(shareURL) {
     const pathParts = url.pathname.split('/').filter(Boolean);
     shortGUID = pathParts[pathParts.length - 1];
   } catch (e) {
-    console.warn('[InviteView] Could not parse share URL:', shareURL);
-    return;
+    console.warn('[InviteView] Could not parse share URL:', shareURL, e);
+    return false;
   }
 
   if (!shortGUID) {
     console.warn('[InviteView] No shortGUID found in share URL:', shareURL);
-    return;
+    return false;
   }
 
   console.log('[InviteView] Accepting share via REST API, shortGUID:', shortGUID);
@@ -185,15 +218,28 @@ async function _acceptShare(shareURL) {
       body: JSON.stringify({ shortGUIDs: [{ value: shortGUID }] })
     });
     const data = await res.json();
-    console.log('[InviteView] Share acceptance result:', JSON.stringify(data).substring(0, 300));
+    console.log('[InviteView] Share acceptance response:', JSON.stringify(data).substring(0, 500));
+
+    // Check for server errors in the response
+    if (data.errors?.length > 0) {
+      const err = data.errors[0];
+      // ALREADY_SHARED = user already accepted this share — that's fine
+      if (err.serverErrorCode === 'ALREADY_SHARED' || err.reason?.includes('already')) {
+        console.log('[InviteView] Share already accepted (OK)');
+      } else {
+        console.warn('[InviteView] Share acceptance server error:', err.serverErrorCode, err.reason);
+      }
+    }
 
     // Give CloudKit time to propagate the zone access
     await new Promise(r => setTimeout(r, 2000));
+    return true;
   } catch (e) {
-    // Don't throw — user might already have access, or share has publicPermission = .readWrite
-    console.warn('[InviteView] Share acceptance error (may be OK if already accepted):', e.message || e);
+    // Don't throw — user might already have access via publicPermission = .readWrite
+    console.warn('[InviteView] Share acceptance error:', e.message || e);
     // Still wait a moment in case the zone was already accepted previously
-    await new Promise(r => setTimeout(r, 500));
+    await new Promise(r => setTimeout(r, 1000));
+    return false;
   }
 }
 
@@ -315,6 +361,8 @@ async function _findCrewMember(token, crewMemberRecordName) {
       if (crewMemberRecordName) {
         const record = await _fetchCrewMemberByRecordName(crewMemberRecordName, zid);
         if (record) {
+          // Ensure zoneID is set (REST API responses may omit it)
+          if (!record.zoneID) record.zoneID = zid;
           console.log('[InviteView] Found CrewMember via direct lookup in zone:', zid.zoneName);
           return record;
         }
@@ -343,6 +391,8 @@ async function _findCrewMember(token, crewMemberRecordName) {
         if (data.records && data.records.length > 0) {
           const record = data.records[0];
           if (!record.serverErrorCode) {
+            // Ensure zoneID is set (REST API responses may omit it)
+            if (!record.zoneID) record.zoneID = zid;
             console.log('[InviteView] Found CrewMember via query in zone:', zid.zoneName);
             return record;
           }
@@ -361,9 +411,15 @@ async function _findCrewMember(token, crewMemberRecordName) {
 /**
  * Claim a CrewMember record by writing the current user's identity.
  * Uses forceUpdate to avoid recordChangeTag conflicts.
+ * Validates that userRecordName is a real identity (not '_pending_') before writing.
  */
 async function _claimCrewMember(crewRecord) {
   const userRecordName = authService.userRecordName;
+  if (!userRecordName || userRecordName === '_pending_') {
+    throw new Error('Cannot claim invite: user identity not resolved');
+  }
+
+  console.log('[InviteView] Claiming CrewMember', crewRecord.recordName, 'as', userRecordName);
   const now = Date.now();
 
   const zid = crewRecord.zoneID;
@@ -394,7 +450,7 @@ async function _claimCrewMember(crewRecord) {
   console.log('[InviteView] Claim result:', JSON.stringify(data).substring(0, 500));
 
   if (data.records && data.records[0]?.serverErrorCode) {
-    throw new Error(`Failed to claim invite: ${data.records[0].serverErrorCode}`);
+    throw new Error(`Failed to claim invite: ${data.records[0].serverErrorCode} — ${data.records[0].reason || ''}`);
   }
 
   return data;
