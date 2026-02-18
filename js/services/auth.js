@@ -164,13 +164,14 @@ class AuthService {
   }
 
   async _validateToken(token) {
-    const url = `${API_BASE}/private/users/caller?ckAPIToken=${API_TOKEN}&ckWebAuthToken=${encodeURIComponent(token)}`;
+    const baseURL = `${API_BASE}/private/users/caller?ckAPIToken=${API_TOKEN}&ckWebAuthToken=${encodeURIComponent(token)}`;
     for (let attempt = 0; attempt < 3; attempt++) {
       try {
-        const res = await fetch(url);
+        const url = attempt === 0 ? baseURL : `${baseURL}&_r=${attempt}`;
+        const res = await fetch(url, { cache: 'no-store' });
         if (res.status === 421) {
           console.warn(`[Auth] 421 Misdirected Request (attempt ${attempt + 1}), retrying...`);
-          await new Promise(r => setTimeout(r, 500 * (attempt + 1)));
+          await new Promise(r => setTimeout(r, 300 * (attempt + 1)));
           continue;
         }
         if (!res.ok) {
@@ -220,9 +221,11 @@ class AuthService {
     const maxAttempts = 5;
     for (let attempt = 0; attempt < maxAttempts; attempt++) {
       try {
-        const res = await fetch(url, options);
+        // Add a cache-busting param on retries to force a new HTTP/2 stream (avoids 421 Misdirected Request)
+        const fetchURL = attempt === 0 ? url : `${url}&_r=${attempt}`;
+        const res = await fetch(fetchURL, { ...options, cache: 'no-store' });
         if (res.status === 421) {
-          const delay = 800 * (attempt + 1);  // 800, 1600, 2400, 3200, 4000ms
+          const delay = 300 * (attempt + 1);  // 300, 600, 900, 1200, 1500ms
           console.warn(`[Auth] 421 on ${path} (attempt ${attempt + 1}/${maxAttempts}), retrying in ${delay}ms...`);
           await new Promise(r => setTimeout(r, delay));
           continue;
