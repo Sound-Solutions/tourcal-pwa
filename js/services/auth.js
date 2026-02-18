@@ -220,49 +220,28 @@ class AuthService {
     const separator = path.includes('?') ? '&' : '?';
     const baseUrl = `${API_BASE}${path}${separator}ckAPIToken=${API_TOKEN}&ckWebAuthToken=${encodeURIComponent(token)}`;
 
-    for (let attempt = 0; attempt < 3; attempt++) {
-      const url = `${baseUrl}&_t=${Date.now()}`;
-      try {
-        const res = await fetch(url, { ...options, cache: 'no-store' });
-        if (res.status === 421) {
-          console.warn(`[Auth] 421 on ${path} (attempt ${attempt + 1}/3)`);
-          // Chrome HTTP/2 connection pool is bad — reload to get a fresh one
-          const reloads = parseInt(sessionStorage.getItem('tourcal_421_reloads') || '0');
-          if (reloads < 3) {
-            console.warn(`[Auth] Reloading to reset HTTP/2 pool (reload ${reloads + 1}/3)...`);
-            sessionStorage.setItem('tourcal_421_reloads', String(reloads + 1));
-            window.location.reload(true);
-            // Hang forever — the reload is in progress
-            return await new Promise(() => {});
-          }
-          // Already reloaded 3 times and still 421 — give up gracefully
-          console.error('[Auth] 421 persists after 3 reloads — network issue');
-          throw new Error('Network unavailable');
-        }
-        if (res.status === 401) {
-          this._user = null;
-          this._webAuthToken = null;
-          localStorage.removeItem(TOKEN_KEY);
-          this._notify();
-          throw new Error('Session expired');
-        }
-        // Success — clear the reload counter
-        sessionStorage.removeItem('tourcal_421_reloads');
-        if (this._user?.userRecordName === '_pending_' && res.ok) {
-          this._resolveUser(token);
-        }
-        return res;
-      } catch (e) {
-        if (e.message === 'Session expired' || e.message === 'Network unavailable') throw e;
-        console.warn(`[Auth] Network error on ${path} (attempt ${attempt + 1}/3):`, e.message);
-        if (attempt < 2) {
-          await new Promise(r => setTimeout(r, 1000 * (attempt + 1)));
-          continue;
-        }
-        throw e;
+    const url = `${baseUrl}&_t=${Date.now()}`;
+    try {
+      const res = await fetch(url, { ...options, cache: 'no-store' });
+      if (res.status === 421 || res.status === 401) {
+        // 401 = token expired. 421 from Apple = session no longer valid (same treatment).
+        // Both mean we need to sign in again.
+        console.warn(`[Auth] ${res.status} on ${path} — session expired, signing out`);
+        this._user = null;
+        this._webAuthToken = null;
+        localStorage.removeItem(TOKEN_KEY);
+        this._notify();
+        throw new Error('Session expired');
       }
+      if (this._user?.userRecordName === '_pending_' && res.ok) {
+        this._resolveUser(token);
+      }
+      return res;
+    } catch (e) {
+      if (e.message === 'Session expired') throw e;
+      console.warn(`[Auth] Network error on ${path}:`, e.message);
+      throw e;
     }
-    throw new Error('Request failed after 3 attempts');
   }
 
   // Background resolve of user identity after pending auth (one attempt only)
