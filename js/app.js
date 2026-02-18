@@ -208,6 +208,15 @@ async function init() {
     router.start();
   }
 
+  // Save invite hash BEFORE auth init — Apple's OAuth redirect strips the hash,
+  // so we must capture it on the initial page load when the user clicks the link.
+  // On the return from Apple sign-in, the hash is gone but localStorage has it.
+  const initialHash = window.location.hash;
+  if (initialHash && initialHash.startsWith('#/invite/')) {
+    localStorage.setItem('tourcal_pendingRedirect', initialHash);
+    console.log('[App] Captured invite hash before auth:', initialHash);
+  }
+
   // Register service worker
   if ('serviceWorker' in navigator) {
     try {
