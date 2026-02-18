@@ -3,7 +3,6 @@
 
 import { authService } from '../services/auth.js';
 import { tourService } from '../services/tour-service.js';
-import { CK_CONFIG } from '../cloudkit-config.js';
 import { showToast } from '../components/toast.js';
 
 function _esc(str) {
@@ -159,31 +158,12 @@ async function _waitForUserIdentity() {
 }
 
 /**
- * Accept a CKShare using CloudKit JS so the shared zone appears in the user's
- * shared database. This is required before we can query the zone for CrewMember records.
- *
- * Uses CloudKit JS (loaded on the page for auth) rather than the REST API,
- * because the REST API doesn't have a share acceptance endpoint.
+ * Accept a CKShare via the CloudKit REST API.
+ * Uses POST /public/records/accept with the shortGUID extracted from the share URL.
+ * This is more reliable than CloudKit JS because it uses the same auth token
+ * as all other REST calls (CloudKit JS has no valid session for already-signed-in users).
  */
 async function _acceptShare(shareURL) {
-  // Wait for CloudKit JS to load (it's loaded async in index.html)
-  let attempts = 0;
-  while (typeof CloudKit === 'undefined' && attempts < 50) {
-    attempts++;
-    await new Promise(r => setTimeout(r, 100));
-  }
-  if (typeof CloudKit === 'undefined') {
-    console.warn('[InviteView] CloudKit JS not available, skipping share acceptance');
-    return;
-  }
-
-  // Ensure CloudKit is configured (auth.setupAuthUI only runs when signed out)
-  try {
-    CloudKit.getDefaultContainer();
-  } catch (e) {
-    CloudKit.configure({ containers: [CK_CONFIG] });
-  }
-
   // Extract shortGUID from the share URL
   // Format: https://www.icloud.com/share/0abCDeFgHiJ#TourCalZone
   let shortGUID;
@@ -201,23 +181,24 @@ async function _acceptShare(shareURL) {
     return;
   }
 
-  console.log('[InviteView] Accepting share with shortGUID:', shortGUID);
+  console.log('[InviteView] Accepting share via REST API, shortGUID:', shortGUID);
 
   try {
-    const container = CloudKit.getDefaultContainer();
-    const response = await container.acceptShares({
-      shortGUIDs: [{ value: shortGUID }]
+    const res = await authService.apiFetch('/public/records/accept', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ shortGUIDs: [{ value: shortGUID }] })
     });
-    console.log('[InviteView] Share accepted successfully');
+    const data = await res.json();
+    console.log('[InviteView] Share acceptance result:', JSON.stringify(data).substring(0, 300));
 
-    // Give CloudKit a moment to propagate the zone access
-    await new Promise(r => setTimeout(r, 1000));
-
-    return response;
+    // Give CloudKit time to propagate the zone access
+    await new Promise(r => setTimeout(r, 2000));
   } catch (e) {
-    // Don't throw — user might already have access from a previous acceptance,
-    // or the share might have publicPermission = .readWrite
+    // Don't throw — user might already have access, or share has publicPermission = .readWrite
     console.warn('[InviteView] Share acceptance error (may be OK if already accepted):', e.message || e);
+    // Still wait a moment in case the zone was already accepted previously
+    await new Promise(r => setTimeout(r, 500));
   }
 }
 
@@ -268,55 +249,72 @@ async function _lookupInvite(token) {
 
 /**
  * Search all shared zones for a CrewMember record with a matching inviteToken.
+ * Retries up to 5 times (10s total) to allow time for zone propagation after share acceptance.
  * Returns the full record object or null.
  */
 async function _findCrewMember(token) {
-  // List all shared zones
-  const zonesRes = await authService.apiFetch('/shared/zones/list', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({})
-  });
+  for (let attempt = 0; attempt < 5; attempt++) {
+    if (attempt > 0) {
+      console.log(`[InviteView] Retrying shared zone search (attempt ${attempt + 1}/5)...`);
+      await new Promise(r => setTimeout(r, 2000));
+    }
 
-  const zonesData = await zonesRes.json();
-  if (!zonesData.zones || zonesData.zones.length === 0) {
-    console.warn('[InviteView] No shared zones found');
-    return null;
-  }
-
-  // Search each zone for a CrewMember with this inviteToken
-  for (const zone of zonesData.zones) {
-    const zid = zone.zoneID;
+    // List all shared zones
+    let zonesData;
     try {
-      const res = await authService.apiFetch('/shared/records/query', {
+      const zonesRes = await authService.apiFetch('/shared/zones/list', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          zoneID: { zoneName: zid.zoneName, ownerRecordName: zid.ownerRecordName },
-          query: {
-            recordType: 'CrewMember',
-            filterBy: [{
-              comparator: 'EQUALS',
-              fieldName: 'inviteToken',
-              fieldValue: { value: token, type: 'STRING' }
-            }]
-          }
-        })
+        body: JSON.stringify({})
       });
-
-      const data = await res.json();
-      if (data.records && data.records.length > 0) {
-        const record = data.records[0];
-        if (!record.serverErrorCode) {
-          console.log('[InviteView] Found CrewMember in zone:', zid.zoneName);
-          return record;
-        }
-      }
+      zonesData = await zonesRes.json();
     } catch (e) {
-      console.warn(`[InviteView] Error searching zone ${zid.zoneName}:`, e);
+      console.warn('[InviteView] Error listing shared zones:', e);
+      continue;
+    }
+
+    if (!zonesData.zones || zonesData.zones.length === 0) {
+      console.warn(`[InviteView] No shared zones found (attempt ${attempt + 1}/5)`);
+      continue;
+    }
+
+    console.log(`[InviteView] Found ${zonesData.zones.length} shared zone(s), searching for CrewMember...`);
+
+    // Search each zone for a CrewMember with this inviteToken
+    for (const zone of zonesData.zones) {
+      const zid = zone.zoneID;
+      try {
+        const res = await authService.apiFetch('/shared/records/query', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            zoneID: { zoneName: zid.zoneName, ownerRecordName: zid.ownerRecordName },
+            query: {
+              recordType: 'CrewMember',
+              filterBy: [{
+                comparator: 'EQUALS',
+                fieldName: 'inviteToken',
+                fieldValue: { value: token, type: 'STRING' }
+              }]
+            }
+          })
+        });
+
+        const data = await res.json();
+        if (data.records && data.records.length > 0) {
+          const record = data.records[0];
+          if (!record.serverErrorCode) {
+            console.log('[InviteView] Found CrewMember in zone:', zid.zoneName);
+            return record;
+          }
+        }
+      } catch (e) {
+        console.warn(`[InviteView] Error searching zone ${zid.zoneName}:`, e);
+      }
     }
   }
 
+  console.warn('[InviteView] CrewMember not found after all retries');
   return null;
 }
 
