@@ -218,28 +218,24 @@ class AuthService {
     const separator = path.includes('?') ? '&' : '?';
     const url = `${API_BASE}${path}${separator}ckAPIToken=${API_TOKEN}&ckWebAuthToken=${encodeURIComponent(token)}`;
 
-    // If we already reloaded once to fix 421s, don't reload again — just retry twice and give up
-    const alreadyReloaded = sessionStorage.getItem('tourcal_421_reload') === '1';
-    const maxAttempts = alreadyReloaded ? 2 : 3;
-    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    for (let attempt = 0; attempt < 3; attempt++) {
       try {
         const res = await fetch(url, { ...options, cache: 'no-store' });
         if (res.status === 421) {
-          console.warn(`[Auth] 421 on ${path} (attempt ${attempt + 1}/${maxAttempts})`);
-          if (attempt < maxAttempts - 1) {
-            // Exponential backoff — give Chrome time to open a fresh connection
-            await new Promise(r => setTimeout(r, 1000 * Math.pow(2, attempt)));
+          console.warn(`[Auth] 421 on ${path} (attempt ${attempt + 1}/3)`);
+          if (attempt < 2) {
+            await new Promise(r => setTimeout(r, 1000 * (attempt + 1)));
             continue;
           }
-          // All retries exhausted — reload once to reset Chrome's HTTP/2 connection pool
-          if (!alreadyReloaded) {
-            console.warn('[Auth] 421 persists after retries, reloading to reset connection...');
-            sessionStorage.setItem('tourcal_421_reload', '1');
+          // All retries 421 — reload to reset Chrome's HTTP/2 pool (once only)
+          const reloadCount = parseInt(sessionStorage.getItem('tourcal_421_reloads') || '0');
+          if (reloadCount < 2) {
+            console.warn('[Auth] Reloading to reset HTTP/2 connection pool...');
+            sessionStorage.setItem('tourcal_421_reloads', String(reloadCount + 1));
             window.location.reload();
-            return; // unreachable but satisfies linter
+            await new Promise(() => {}); // never resolves — reload is happening
           }
-          // Already reloaded and still 421 — give up and throw
-          throw new Error(`API request failed after retries (421)`);
+          throw new Error('421 persists after reload');
         }
         if (res.status === 401) {
           this._user = null;
@@ -248,17 +244,15 @@ class AuthService {
           this._notify();
           throw new Error('Session expired');
         }
-        // Clear the reload flag on any successful response
-        sessionStorage.removeItem('tourcal_421_reload');
-        // If user was pending, update with real info on first success
+        sessionStorage.removeItem('tourcal_421_reloads');
         if (this._user?.userRecordName === '_pending_' && res.ok) {
           this._resolveUser(token);
         }
         return res;
       } catch (e) {
-        if (e.message === 'Session expired') throw e;
-        console.warn(`[Auth] Network error on ${path} (attempt ${attempt + 1}/${maxAttempts}):`, e.message);
-        if (attempt < maxAttempts - 1) {
+        if (e.message === 'Session expired' || e.message === '421 persists after reload') throw e;
+        console.warn(`[Auth] Network error on ${path} (attempt ${attempt + 1}/3):`, e.message);
+        if (attempt < 2) {
           await new Promise(r => setTimeout(r, 1000));
           continue;
         }
