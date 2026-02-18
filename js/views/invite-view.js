@@ -24,12 +24,9 @@ export async function renderInviteView(params) {
     return;
   }
 
-  // Ensure we have a resolved userRecordName (not '_pending_')
-  await _waitForUserIdentity();
-  if (!authService.userRecordName || authService.userRecordName === '_pending_') {
-    _showError(content, 'Authentication Error', 'Could not verify your identity. Please sign out and sign in again.');
-    return;
-  }
+  // Kick off identity resolution in the background — we'll wait for it before the claim step,
+  // but don't block here since /users/caller returns 400 for accounts with no private zone.
+  authService.resolveIdentityNow();
 
   _showProgress(content, 'Looking up your invite...');
 
@@ -138,22 +135,20 @@ function _showSuccess(container, tourName, roleName, alreadyJoined) {
 
 /**
  * Wait for authService.userRecordName to resolve from '_pending_' to a real value.
- * Actively triggers the /users/caller fetch if still pending, retries up to 15s.
+ * Gives up after 5 seconds — accounts with no private CloudKit zone return 400 on
+ * /users/caller and will never resolve via that endpoint. The claim step will
+ * try a final resolution via the public DB query response.
  */
 async function _waitForUserIdentity() {
   if (authService.userRecordName && authService.userRecordName !== '_pending_') return;
 
-  // Kick off the identity resolve immediately (don't wait for a data fetch to trigger it)
-  authService.resolveIdentityNow();
-
   let attempts = 0;
-  while (authService.userRecordName === '_pending_' && attempts < 30) {
+  while (authService.userRecordName === '_pending_' && attempts < 10) {
     attempts++;
-    console.log(`[InviteView] Waiting for user identity... (attempt ${attempts})`);
     await new Promise(r => setTimeout(r, 500));
   }
   if (authService.userRecordName === '_pending_') {
-    console.warn('[InviteView] User identity still pending after retries');
+    console.log('[InviteView] Identity still pending — will proceed and resolve via API calls');
   }
 }
 

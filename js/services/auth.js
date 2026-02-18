@@ -165,35 +165,40 @@ class AuthService {
   }
 
   async _validateToken(token) {
-    const baseURL = `${API_BASE}/private/users/caller?ckAPIToken=${API_TOKEN}&ckWebAuthToken=${encodeURIComponent(token)}`;
-    for (let attempt = 0; attempt < 5; attempt++) {
-      try {
-        const url = `${baseURL}&_t=${Date.now()}&_a=${attempt}`;
-        const res = await fetch(url, { cache: 'no-store' });
-        if (res.status === 421) {
-          console.warn(`[Auth] 421 Misdirected Request (attempt ${attempt + 1}/5), retrying...`);
-          const delay = 200 * Math.pow(2, attempt);
-          await new Promise(r => setTimeout(r, delay));
-          continue;
+    // Try private DB first, fall back to public DB for accounts with no private zone.
+    // Accounts that have never run the iOS app get 400 on /private/users/caller because
+    // Apple hasn't provisioned a private zone for them in this container.
+    const dbPaths = ['private', 'public'];
+    for (const db of dbPaths) {
+      const baseURL = `${API_BASE}/${db}/users/caller?ckAPIToken=${API_TOKEN}&ckWebAuthToken=${encodeURIComponent(token)}`;
+      for (let attempt = 0; attempt < 3; attempt++) {
+        try {
+          const url = `${baseURL}&_t=${Date.now()}&_a=${attempt}`;
+          const res = await fetch(url, { cache: 'no-store' });
+          if (res.status === 421) {
+            console.warn(`[Auth] 421 on ${db}/users/caller (attempt ${attempt + 1}/3), retrying...`);
+            await new Promise(r => setTimeout(r, 200 * Math.pow(2, attempt)));
+            continue;
+          }
+          if (!res.ok) {
+            console.warn(`[Auth] ${db}/users/caller failed:`, res.status);
+            break; // try next db path
+          }
+          const data = await res.json();
+          console.log(`[Auth] Validated user via ${db} DB:`, data.userRecordName);
+          return {
+            userRecordName: data.userRecordName,
+            nameComponents: data.nameComponents || null,
+            lookupInfo: data.lookupInfo || null
+          };
+        } catch (e) {
+          console.warn(`[Auth] ${db}/users/caller error (attempt ${attempt + 1}/3):`, e);
+          if (attempt < 2) {
+            await new Promise(r => setTimeout(r, 500 * (attempt + 1)));
+            continue;
+          }
+          break;
         }
-        if (!res.ok) {
-          console.warn('[Auth] Token validation failed:', res.status);
-          return null;
-        }
-        const data = await res.json();
-        console.log('[Auth] Validated user:', data.userRecordName);
-        return {
-          userRecordName: data.userRecordName,
-          nameComponents: data.nameComponents || null,
-          lookupInfo: data.lookupInfo || null
-        };
-      } catch (e) {
-        console.warn(`[Auth] Token validation error (attempt ${attempt + 1}/5):`, e);
-        if (attempt < 4) {
-          await new Promise(r => setTimeout(r, 500 * (attempt + 1)));
-          continue;
-        }
-        return null;
       }
     }
     return null;
