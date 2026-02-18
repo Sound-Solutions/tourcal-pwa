@@ -273,7 +273,19 @@ async function init() {
   // Start router (or auth view if not signed in)
   if (authService.isSignedIn) {
     await tourService.loadCachedTours();
-    startRouterOnce();
+
+    // Check for a pending redirect (e.g. invite link saved before Apple OAuth redirect)
+    // This handles the case where auth.init() sets _user directly from a redirect token
+    // without firing onAuthChange, so the pending redirect check in onAuthChange is bypassed.
+    const pendingRedirect = localStorage.getItem('tourcal_pendingRedirect');
+    if (pendingRedirect) {
+      localStorage.removeItem('tourcal_pendingRedirect');
+      console.log('[App] Restoring pending redirect (init path):', pendingRedirect);
+      window.location.hash = pendingRedirect;
+      startRouterOnce();
+    } else {
+      startRouterOnce();
+    }
   } else {
     // Render the auth view first so the #apple-sign-in-button div exists
     renderAuthView();
