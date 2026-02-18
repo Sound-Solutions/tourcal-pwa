@@ -56,8 +56,14 @@ class TourService {
       const privateTours = await this._fetchPrivateTours();
       tours.push(...privateTours);
     } catch (e) {
-      console.error('[TourService] Error fetching private tours:', e);
-      errors.push(`Private: ${e.message}`);
+      // ZONE_NOT_FOUND = this Apple ID has never run the iOS app, so the
+      // TourCalZone doesn't exist yet. Not an error — just no owned tours.
+      if (e.message.includes('ZONE_NOT_FOUND')) {
+        console.log('[TourService] Private zone not found — no owned tours for this account');
+      } else {
+        console.error('[TourService] Error fetching private tours:', e);
+        errors.push(`Private: ${e.message}`);
+      }
     }
 
     // Fetch from shared DB
