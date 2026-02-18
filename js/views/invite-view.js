@@ -1,8 +1,9 @@
 // Invite View - Accept a tour invite via token
-// Flow: look up TourInvite (public DB) -> find CrewMember (shared DB) -> claim it
+// Flow: look up TourInvite (public DB) -> accept CKShare -> find CrewMember (shared DB) -> claim it
 
 import { authService } from '../services/auth.js';
 import { tourService } from '../services/tour-service.js';
+import { CK_CONFIG } from '../cloudkit-config.js';
 import { showToast } from '../components/toast.js';
 
 function _esc(str) {
@@ -46,7 +47,12 @@ export async function renderInviteView(params) {
 
     _showProgress(content, `Joining ${_esc(tourName)}...`);
 
-    // Step 2: Find the CrewMember record in shared zones
+    // Step 2: Accept the CKShare (grants access to the shared zone)
+    if (invite.shareURL) {
+      await _acceptShare(invite.shareURL);
+    }
+
+    // Step 3: Find the CrewMember record in shared zones
     const crewMember = await _findCrewMember(token);
     if (!crewMember) {
       _showError(
@@ -58,7 +64,7 @@ export async function renderInviteView(params) {
       return;
     }
 
-    // Step 3: Check if already claimed
+    // Step 4: Check if already claimed
     const existingUser = crewMember.fields?.userRecordName?.value;
     if (existingUser) {
       if (existingUser === authService.userRecordName) {
@@ -71,10 +77,10 @@ export async function renderInviteView(params) {
       return;
     }
 
-    // Step 4: Claim the CrewMember record
+    // Step 5: Claim the CrewMember record
     await _claimCrewMember(crewMember);
 
-    // Step 5: Show success and redirect
+    // Step 6: Show success and redirect
     _showSuccess(content, tourName, roleName, false);
     showToast(`Joined ${tourName} as ${roleName}`, 'info');
     await _refreshAndRedirect();
@@ -144,6 +150,69 @@ async function _waitForUserIdentity() {
   }
   if (authService.userRecordName === '_pending_') {
     console.warn('[InviteView] User identity still pending after retries');
+  }
+}
+
+/**
+ * Accept a CKShare using CloudKit JS so the shared zone appears in the user's
+ * shared database. This is required before we can query the zone for CrewMember records.
+ *
+ * Uses CloudKit JS (loaded on the page for auth) rather than the REST API,
+ * because the REST API doesn't have a share acceptance endpoint.
+ */
+async function _acceptShare(shareURL) {
+  // Wait for CloudKit JS to load (it's loaded async in index.html)
+  let attempts = 0;
+  while (typeof CloudKit === 'undefined' && attempts < 50) {
+    attempts++;
+    await new Promise(r => setTimeout(r, 100));
+  }
+  if (typeof CloudKit === 'undefined') {
+    console.warn('[InviteView] CloudKit JS not available, skipping share acceptance');
+    return;
+  }
+
+  // Ensure CloudKit is configured (auth.setupAuthUI only runs when signed out)
+  try {
+    CloudKit.getDefaultContainer();
+  } catch (e) {
+    CloudKit.configure({ containers: [CK_CONFIG] });
+  }
+
+  // Extract shortGUID from the share URL
+  // Format: https://www.icloud.com/share/0abCDeFgHiJ#TourCalZone
+  let shortGUID;
+  try {
+    const url = new URL(shareURL);
+    const pathParts = url.pathname.split('/').filter(Boolean);
+    shortGUID = pathParts[pathParts.length - 1];
+  } catch (e) {
+    console.warn('[InviteView] Could not parse share URL:', shareURL);
+    return;
+  }
+
+  if (!shortGUID) {
+    console.warn('[InviteView] No shortGUID found in share URL:', shareURL);
+    return;
+  }
+
+  console.log('[InviteView] Accepting share with shortGUID:', shortGUID);
+
+  try {
+    const container = CloudKit.getDefaultContainer();
+    const response = await container.acceptShares({
+      shortGUIDs: [{ value: shortGUID }]
+    });
+    console.log('[InviteView] Share accepted successfully');
+
+    // Give CloudKit a moment to propagate the zone access
+    await new Promise(r => setTimeout(r, 1000));
+
+    return response;
+  } catch (e) {
+    // Don't throw — user might already have access from a previous acceptance,
+    // or the share might have publicPermission = .readWrite
+    console.warn('[InviteView] Share acceptance error (may be OK if already accepted):', e.message || e);
   }
 }
 
