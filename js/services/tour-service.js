@@ -204,7 +204,7 @@ class TourService {
               filterBy: [{
                 comparator: 'EQUALS',
                 fieldName: 'userRecordName',
-                fieldValue: { value: userRecordName }
+                fieldValue: { value: userRecordName, type: 'STRING' }
               }]
             }
           })
@@ -218,8 +218,8 @@ class TourService {
             tour.role = role;
             // Also store the crew member's permission overrides
             let overrides = null;
-            if (f.permissionOverridesJSON?.value) {
-              try { overrides = JSON.parse(f.permissionOverridesJSON.value); } catch (e) {}
+            if (f.permissionOverrides?.value) {
+              try { overrides = JSON.parse(f.permissionOverrides.value); } catch (e) {}
             }
             tour.permissionOverrides = overrides;
             tour.crewMemberRecordName = data.records[0].recordName;

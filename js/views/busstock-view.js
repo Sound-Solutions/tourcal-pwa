@@ -98,7 +98,7 @@ function _render(container) {
   const { buses, selectedBusId, selectedDate, sheet, tour } = _state;
   const role = tour.role;
   const locked = busStockService.isSheetLocked(sheet);
-  const editable = canEditBusStock(role, locked);
+  const editable = canEditBusStock(role, locked, tour.permissionOverrides);
   const isAdmin = isOwnerOrAdmin(role);
   const currentUser = authService.userRecordName;
 

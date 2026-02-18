@@ -26,6 +26,10 @@ export async function renderInviteView(params) {
 
   // Ensure we have a resolved userRecordName (not '_pending_')
   await _waitForUserIdentity();
+  if (!authService.userRecordName || authService.userRecordName === '_pending_') {
+    _showError(content, 'Authentication Error', 'Could not verify your identity. Please sign out and sign in again.');
+    return;
+  }
 
   _showProgress(content, 'Looking up your invite...');
 
@@ -39,19 +43,6 @@ export async function renderInviteView(params) {
 
     const tourName = invite.tourName || 'this tour';
     const roleName = invite.roleName || 'Crew';
-
-    // Check if already claimed by someone
-    if (invite.claimedByUserRecordName) {
-      const currentUser = authService.userRecordName;
-      if (currentUser && invite.claimedByUserRecordName === currentUser) {
-        // Already claimed by this user - just redirect
-        _showSuccess(content, tourName, roleName, true);
-        await _refreshAndRedirect();
-        return;
-      }
-      _showError(content, 'Invite Already Used', 'This invite has already been claimed by another user.');
-      return;
-    }
 
     _showProgress(content, `Joining ${_esc(tourName)}...`);
 
@@ -67,10 +58,23 @@ export async function renderInviteView(params) {
       return;
     }
 
-    // Step 3: Claim the CrewMember record
+    // Step 3: Check if already claimed
+    const existingUser = crewMember.fields?.userRecordName?.value;
+    if (existingUser) {
+      if (existingUser === authService.userRecordName) {
+        // Already claimed by this user - just redirect
+        _showSuccess(content, tourName, roleName, true);
+        await _refreshAndRedirect();
+        return;
+      }
+      _showError(content, 'Invite Already Used', 'This invite has already been claimed by another user.');
+      return;
+    }
+
+    // Step 4: Claim the CrewMember record
     await _claimCrewMember(crewMember);
 
-    // Step 4: Show success and redirect
+    // Step 5: Show success and redirect
     _showSuccess(content, tourName, roleName, false);
     showToast(`Joined ${tourName} as ${roleName}`, 'info');
     await _refreshAndRedirect();
@@ -145,7 +149,7 @@ async function _waitForUserIdentity() {
 
 /**
  * Query the PUBLIC database for a TourInvite record matching the given token.
- * Returns { tourName, roleName, shareURL, claimedByUserRecordName } or null.
+ * Returns { tourName, roleName, shareURL } or null.
  */
 async function _lookupInvite(token) {
   const body = {
@@ -184,7 +188,6 @@ async function _lookupInvite(token) {
     tourName: f.tourName?.value || null,
     roleName: f.roleName?.value || null,
     shareURL: f.shareURL?.value || null,
-    claimedByUserRecordName: f.claimedByUserRecordName?.value || null,
     _record: record
   };
 }
@@ -262,7 +265,8 @@ async function _claimCrewMember(crewRecord) {
         recordChangeTag: crewRecord.recordChangeTag,
         fields: {
           userRecordName: { value: userRecordName },
-          claimedAt: { value: now, type: 'TIMESTAMP' }
+          claimedAt: { value: now, type: 'TIMESTAMP' },
+          updatedAt: { value: now, type: 'TIMESTAMP' }
         }
       }
     }]

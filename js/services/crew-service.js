@@ -42,8 +42,8 @@ class CrewService {
     const f = record.fields || {};
 
     let overrides = null;
-    if (f.permissionOverridesJSON?.value) {
-      try { overrides = JSON.parse(f.permissionOverridesJSON.value); } catch (e) {}
+    if (f.permissionOverrides?.value) {
+      try { overrides = JSON.parse(f.permissionOverrides.value); } catch (e) {}
     }
 
     return {
