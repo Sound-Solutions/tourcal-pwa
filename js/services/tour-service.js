@@ -10,6 +10,7 @@ class TourService {
     this._tours = [];
     this._activeTour = null;
     this._listeners = [];
+    this._fetchPromise = null;
   }
 
   get tours() {
@@ -40,6 +41,13 @@ class TourService {
   }
 
   async fetchTours() {
+    // Deduplicate concurrent fetches — return the same promise if already in flight
+    if (this._fetchPromise) return this._fetchPromise;
+    this._fetchPromise = this._doFetchTours().finally(() => { this._fetchPromise = null; });
+    return this._fetchPromise;
+  }
+
+  async _doFetchTours() {
     const tours = [];
     const errors = [];
 

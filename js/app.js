@@ -193,6 +193,14 @@ function _esc(str) {
 
 // Initialize app
 async function init() {
+  let routerStarted = false;
+
+  function startRouterOnce() {
+    if (routerStarted) return;
+    routerStarted = true;
+    router.start();
+  }
+
   // Register service worker
   if ('serviceWorker' in navigator) {
     try {
@@ -221,7 +229,7 @@ async function init() {
           window.location.hash = '#/tours';
         }
       }
-      router.start();
+      startRouterOnce();
     } else {
       // Signed out - render auth view then set up the sign-in button
       renderAuthView();
@@ -234,14 +242,10 @@ async function init() {
     if (tour) applyTourColor(tour);
   });
 
-  // Restore active tour from cache before routing
+  // Start router (or auth view if not signed in)
   if (authService.isSignedIn) {
     await tourService.loadCachedTours();
-  }
-
-  // Start router
-  if (authService.isSignedIn) {
-    router.start();
+    startRouterOnce();
   } else {
     // Render the auth view first so the #apple-sign-in-button div exists
     renderAuthView();
