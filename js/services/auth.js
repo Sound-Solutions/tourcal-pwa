@@ -54,31 +54,32 @@ class AuthService {
     const token = redirectToken || localStorage.getItem(TOKEN_KEY);
 
     if (token) {
-      console.log('[Auth] Validating token...');
-      const user = await this._validateToken(token);
-      if (user) {
-        this._webAuthToken = token;
-        localStorage.setItem(TOKEN_KEY, token);
-        this._user = user;
-        console.log('[Auth] Signed in as:', user.userRecordName);
-        if (redirectToken) {
-          window.history.replaceState({}, '', window.location.pathname);
-        }
-        return this._user;
-      } else {
-        // Validation endpoint may fail (e.g. 400 in dev environment)
-        // but the token can still work for data queries. Trust it and
-        // let apiFetch's 401 handler clear auth if truly expired.
-        console.log('[Auth] Validation endpoint failed, trusting stored token');
-        this._webAuthToken = token;
-        localStorage.setItem(TOKEN_KEY, token);
-        this._user = { userRecordName: '_pending_' };
-        if (redirectToken) {
-          window.history.replaceState({}, '', window.location.pathname);
+      this._webAuthToken = token;
+      localStorage.setItem(TOKEN_KEY, token);
+
+      if (redirectToken) {
+        // Fresh sign-in redirect — validate and resolve identity
+        console.log('[Auth] Validating redirect token...');
+        window.history.replaceState({}, '', window.location.pathname);
+        const user = await this._validateToken(token);
+        if (user) {
+          this._user = user;
+          console.log('[Auth] Signed in as:', user.userRecordName);
+        } else {
+          // Validation failed but trust token anyway
+          console.log('[Auth] Validation failed for redirect token, trusting it');
+          this._user = { userRecordName: '_pending_' };
           await new Promise(r => setTimeout(r, 1500));
         }
-        return this._user;
+      } else {
+        // Already-stored token — skip validation entirely to avoid 421 storm.
+        // The token will be tested implicitly by the first data fetch.
+        // If expired, apiFetch's 401 handler will clear auth and sign out.
+        console.log('[Auth] Using stored token (skipping validation)');
+        this._user = { userRecordName: '_pending_' };
       }
+
+      return this._user;
     }
 
     return this._user;
@@ -219,17 +220,24 @@ class AuthService {
     const separator = path.includes('?') ? '&' : '?';
     const baseUrl = `${API_BASE}${path}${separator}ckAPIToken=${API_TOKEN}&ckWebAuthToken=${encodeURIComponent(token)}`;
 
-    for (let attempt = 0; attempt < 5; attempt++) {
-      // Add unique cache-buster on every attempt to force new HTTP/2 stream
-      const url = `${baseUrl}&_t=${Date.now()}&_a=${attempt}`;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const url = `${baseUrl}&_t=${Date.now()}`;
       try {
         const res = await fetch(url, { ...options, cache: 'no-store' });
         if (res.status === 421) {
-          console.warn(`[Auth] 421 on ${path} (attempt ${attempt + 1}/5)`);
-          // Exponential backoff: 200ms, 400ms, 800ms, 1600ms
-          const delay = 200 * Math.pow(2, attempt);
-          await new Promise(r => setTimeout(r, delay));
-          continue;
+          console.warn(`[Auth] 421 on ${path} (attempt ${attempt + 1}/3)`);
+          // Chrome HTTP/2 connection pool is bad — reload to get a fresh one
+          const reloads = parseInt(sessionStorage.getItem('tourcal_421_reloads') || '0');
+          if (reloads < 3) {
+            console.warn(`[Auth] Reloading to reset HTTP/2 pool (reload ${reloads + 1}/3)...`);
+            sessionStorage.setItem('tourcal_421_reloads', String(reloads + 1));
+            window.location.reload(true);
+            // Hang forever — the reload is in progress
+            return await new Promise(() => {});
+          }
+          // Already reloaded 3 times and still 421 — give up gracefully
+          console.error('[Auth] 421 persists after 3 reloads — network issue');
+          throw new Error('Network unavailable');
         }
         if (res.status === 401) {
           this._user = null;
@@ -238,21 +246,23 @@ class AuthService {
           this._notify();
           throw new Error('Session expired');
         }
+        // Success — clear the reload counter
+        sessionStorage.removeItem('tourcal_421_reloads');
         if (this._user?.userRecordName === '_pending_' && res.ok) {
           this._resolveUser(token);
         }
         return res;
       } catch (e) {
-        if (e.message === 'Session expired') throw e;
-        console.warn(`[Auth] Network error on ${path} (attempt ${attempt + 1}/5):`, e.message);
-        if (attempt < 4) {
-          await new Promise(r => setTimeout(r, 500 * (attempt + 1)));
+        if (e.message === 'Session expired' || e.message === 'Network unavailable') throw e;
+        console.warn(`[Auth] Network error on ${path} (attempt ${attempt + 1}/3):`, e.message);
+        if (attempt < 2) {
+          await new Promise(r => setTimeout(r, 1000 * (attempt + 1)));
           continue;
         }
         throw e;
       }
     }
-    throw new Error('Request failed after 5 attempts');
+    throw new Error('Request failed after 3 attempts');
   }
 
   // Background resolve of user identity after pending auth (one attempt only)
