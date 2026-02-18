@@ -165,13 +165,14 @@ class AuthService {
 
   async _validateToken(token) {
     const baseURL = `${API_BASE}/private/users/caller?ckAPIToken=${API_TOKEN}&ckWebAuthToken=${encodeURIComponent(token)}`;
-    for (let attempt = 0; attempt < 3; attempt++) {
+    for (let attempt = 0; attempt < 5; attempt++) {
       try {
-        const url = attempt === 0 ? baseURL : `${baseURL}&_r=${attempt}`;
+        const url = `${baseURL}&_t=${Date.now()}&_a=${attempt}`;
         const res = await fetch(url, { cache: 'no-store' });
         if (res.status === 421) {
-          console.warn(`[Auth] 421 Misdirected Request (attempt ${attempt + 1}), retrying...`);
-          await new Promise(r => setTimeout(r, 300 * (attempt + 1)));
+          console.warn(`[Auth] 421 Misdirected Request (attempt ${attempt + 1}/5), retrying...`);
+          const delay = 200 * Math.pow(2, attempt);
+          await new Promise(r => setTimeout(r, delay));
           continue;
         }
         if (!res.ok) {
@@ -186,9 +187,9 @@ class AuthService {
           lookupInfo: data.lookupInfo || null
         };
       } catch (e) {
-        console.warn(`[Auth] Token validation error (attempt ${attempt + 1}):`, e);
-        if (attempt < 2) {
-          await new Promise(r => setTimeout(r, 500));
+        console.warn(`[Auth] Token validation error (attempt ${attempt + 1}/5):`, e);
+        if (attempt < 4) {
+          await new Promise(r => setTimeout(r, 500 * (attempt + 1)));
           continue;
         }
         return null;
@@ -216,26 +217,19 @@ class AuthService {
     if (!token) throw new Error('Not authenticated');
 
     const separator = path.includes('?') ? '&' : '?';
-    const url = `${API_BASE}${path}${separator}ckAPIToken=${API_TOKEN}&ckWebAuthToken=${encodeURIComponent(token)}`;
+    const baseUrl = `${API_BASE}${path}${separator}ckAPIToken=${API_TOKEN}&ckWebAuthToken=${encodeURIComponent(token)}`;
 
-    for (let attempt = 0; attempt < 3; attempt++) {
+    for (let attempt = 0; attempt < 5; attempt++) {
+      // Add unique cache-buster on every attempt to force new HTTP/2 stream
+      const url = `${baseUrl}&_t=${Date.now()}&_a=${attempt}`;
       try {
         const res = await fetch(url, { ...options, cache: 'no-store' });
         if (res.status === 421) {
-          console.warn(`[Auth] 421 on ${path} (attempt ${attempt + 1}/3)`);
-          if (attempt < 2) {
-            await new Promise(r => setTimeout(r, 1000 * (attempt + 1)));
-            continue;
-          }
-          // All retries 421 — reload to reset Chrome's HTTP/2 pool (once only)
-          const reloadCount = parseInt(sessionStorage.getItem('tourcal_421_reloads') || '0');
-          if (reloadCount < 2) {
-            console.warn('[Auth] Reloading to reset HTTP/2 connection pool...');
-            sessionStorage.setItem('tourcal_421_reloads', String(reloadCount + 1));
-            window.location.reload();
-            await new Promise(() => {}); // never resolves — reload is happening
-          }
-          throw new Error('421 persists after reload');
+          console.warn(`[Auth] 421 on ${path} (attempt ${attempt + 1}/5)`);
+          // Exponential backoff: 200ms, 400ms, 800ms, 1600ms
+          const delay = 200 * Math.pow(2, attempt);
+          await new Promise(r => setTimeout(r, delay));
+          continue;
         }
         if (res.status === 401) {
           this._user = null;
@@ -244,21 +238,21 @@ class AuthService {
           this._notify();
           throw new Error('Session expired');
         }
-        sessionStorage.removeItem('tourcal_421_reloads');
         if (this._user?.userRecordName === '_pending_' && res.ok) {
           this._resolveUser(token);
         }
         return res;
       } catch (e) {
-        if (e.message === 'Session expired' || e.message === '421 persists after reload') throw e;
-        console.warn(`[Auth] Network error on ${path} (attempt ${attempt + 1}/3):`, e.message);
-        if (attempt < 2) {
-          await new Promise(r => setTimeout(r, 1000));
+        if (e.message === 'Session expired') throw e;
+        console.warn(`[Auth] Network error on ${path} (attempt ${attempt + 1}/5):`, e.message);
+        if (attempt < 4) {
+          await new Promise(r => setTimeout(r, 500 * (attempt + 1)));
           continue;
         }
         throw e;
       }
     }
+    throw new Error('Request failed after 5 attempts');
   }
 
   // Background resolve of user identity after pending auth (one attempt only)
