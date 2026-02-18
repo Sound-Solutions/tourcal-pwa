@@ -49,7 +49,7 @@ export async function renderInviteView(params) {
     }
 
     // Step 3: Find the CrewMember record in shared zones
-    const crewMember = await _findCrewMember(token);
+    const crewMember = await _findCrewMember(token, invite.crewMemberRecordName);
     if (!crewMember) {
       _showError(
         content,
@@ -238,16 +238,49 @@ async function _lookupInvite(token) {
     tourName: f.tourName?.value || null,
     roleName: f.roleName?.value || null,
     shareURL: f.shareURL?.value || null,
+    crewMemberRecordName: f.crewMemberRecordName?.value || null,
     _record: record
   };
 }
 
 /**
+ * Fetch a CrewMember record directly by its recordName from the shared zone.
+ * This is more reliable than a query since it doesn't require the inviteToken
+ * field to be indexed/queryable in the shared DB schema.
+ */
+async function _fetchCrewMemberByRecordName(recordName, zoneID) {
+  try {
+    const res = await authService.apiFetch('/shared/records/lookup', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        zoneID: { zoneName: zoneID.zoneName, ownerRecordName: zoneID.ownerRecordName },
+        records: [{ recordName }]
+      })
+    });
+    const data = await res.json();
+    console.log('[InviteView] Direct lookup result:', JSON.stringify(data).substring(0, 500));
+    if (data.records && data.records.length > 0) {
+      const record = data.records[0];
+      if (!record.serverErrorCode) {
+        return record;
+      }
+      console.warn('[InviteView] Direct lookup error code:', record.serverErrorCode, record.reason);
+    }
+  } catch (e) {
+    console.warn('[InviteView] Direct lookup error:', e);
+  }
+  return null;
+}
+
+/**
  * Search all shared zones for a CrewMember record with a matching inviteToken.
+ * First tries a direct lookup by recordName (from the TourInvite's crewMemberRecordName field),
+ * then falls back to a query by inviteToken field.
  * Retries up to 5 times (10s total) to allow time for zone propagation after share acceptance.
  * Returns the full record object or null.
  */
-async function _findCrewMember(token) {
+async function _findCrewMember(token, crewMemberRecordName) {
   for (let attempt = 0; attempt < 5; attempt++) {
     if (attempt > 0) {
       console.log(`[InviteView] Retrying shared zone search (attempt ${attempt + 1}/5)...`);
@@ -275,9 +308,19 @@ async function _findCrewMember(token) {
 
     console.log(`[InviteView] Found ${zonesData.zones.length} shared zone(s), searching for CrewMember...`);
 
-    // Search each zone for a CrewMember with this inviteToken
     for (const zone of zonesData.zones) {
       const zid = zone.zoneID;
+
+      // Strategy 1: Direct lookup by recordName (doesn't require field indexing)
+      if (crewMemberRecordName) {
+        const record = await _fetchCrewMemberByRecordName(crewMemberRecordName, zid);
+        if (record) {
+          console.log('[InviteView] Found CrewMember via direct lookup in zone:', zid.zoneName);
+          return record;
+        }
+      }
+
+      // Strategy 2: Query by inviteToken field
       try {
         const res = await authService.apiFetch('/shared/records/query', {
           method: 'POST',
@@ -296,12 +339,14 @@ async function _findCrewMember(token) {
         });
 
         const data = await res.json();
+        console.log('[InviteView] Query response:', JSON.stringify(data).substring(0, 300));
         if (data.records && data.records.length > 0) {
           const record = data.records[0];
           if (!record.serverErrorCode) {
-            console.log('[InviteView] Found CrewMember in zone:', zid.zoneName);
+            console.log('[InviteView] Found CrewMember via query in zone:', zid.zoneName);
             return record;
           }
+          console.warn('[InviteView] Query record error:', record.serverErrorCode, record.reason);
         }
       } catch (e) {
         console.warn(`[InviteView] Error searching zone ${zid.zoneName}:`, e);
