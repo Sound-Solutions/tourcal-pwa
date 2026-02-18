@@ -42,6 +42,13 @@ function updateHeaderForTour() {
 function requireAuth(handler) {
   return async (params) => {
     if (!authService.isSignedIn) {
+      // Save current hash so we can restore it after sign-in
+      // (Apple OAuth redirect drops the hash fragment)
+      const currentHash = window.location.hash;
+      if (currentHash && currentHash !== '#/' && currentHash !== '#/tours') {
+        localStorage.setItem('tourcal_pendingRedirect', currentHash);
+        console.log('[App] Saved pending redirect:', currentHash);
+      }
       renderAuthView();
       return;
     }
@@ -223,6 +230,18 @@ async function init() {
       cleanupAuthView();
       // Restore cached tour before routing
       await tourService.loadCachedTours();
+
+      // Restore any pending redirect saved before the Apple sign-in redirect
+      // (Apple OAuth drops hash fragments, so we save them in localStorage)
+      const pendingRedirect = localStorage.getItem('tourcal_pendingRedirect');
+      if (pendingRedirect) {
+        localStorage.removeItem('tourcal_pendingRedirect');
+        console.log('[App] Restoring pending redirect:', pendingRedirect);
+        window.location.hash = pendingRedirect;
+        startRouterOnce();
+        return;
+      }
+
       // Signed in - go to tours or current route
       if (window.location.hash === '' || window.location.hash === '#/') {
         if (!tourService.activeTour) {
