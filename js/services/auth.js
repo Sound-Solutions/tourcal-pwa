@@ -257,6 +257,14 @@ class AuthService {
     } catch (e) { /* ignore */ }
   }
 
+  // Public: explicitly kick off identity resolution (e.g. from invite view)
+  resolveIdentityNow() {
+    const token = this._webAuthToken || localStorage.getItem(TOKEN_KEY);
+    if (token && this._user?.userRecordName === '_pending_') {
+      this._resolveUser(token);
+    }
+  }
+
   _waitForCloudKit() {
     return new Promise((resolve, reject) => {
       if (typeof CloudKit !== 'undefined') {

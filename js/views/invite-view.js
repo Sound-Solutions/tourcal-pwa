@@ -139,11 +139,16 @@ function _showSuccess(container, tourName, roleName, alreadyJoined) {
 
 /**
  * Wait for authService.userRecordName to resolve from '_pending_' to a real value.
- * Retries up to 10 times (500ms apart).
+ * Actively triggers the /users/caller fetch if still pending, retries up to 15s.
  */
 async function _waitForUserIdentity() {
+  if (authService.userRecordName && authService.userRecordName !== '_pending_') return;
+
+  // Kick off the identity resolve immediately (don't wait for a data fetch to trigger it)
+  authService.resolveIdentityNow();
+
   let attempts = 0;
-  while (authService.userRecordName === '_pending_' && attempts < 10) {
+  while (authService.userRecordName === '_pending_' && attempts < 30) {
     attempts++;
     console.log(`[InviteView] Waiting for user identity... (attempt ${attempts})`);
     await new Promise(r => setTimeout(r, 500));
