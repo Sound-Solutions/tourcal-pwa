@@ -82,6 +82,13 @@ export async function renderBusStockSheetView({ busId, date }) {
   _state.selectedDate = date;
   _state.tour = tourService.activeTour;
   _saveSelection();
+
+  // Set header with back button to event detail
+  document.getElementById('header-title').textContent = 'Bus Stock';
+  document.getElementById('header-actions').innerHTML = `
+    <button class="btn btn-text" onclick="history.back()">&#8249; Back</button>
+  `;
+
   await renderBusStockView();
 }
 

@@ -86,10 +86,13 @@ function _render(container, event, daysheet, setlist, venueNote, tour, busSheets
 
   let html = '<div class="event-detail-view">';
 
-  // Header
+  // Header with tour color dot
   html += `
     <div class="event-detail-header">
-      <h1 class="event-detail-summary">${_esc(event.summary)}</h1>
+      <div class="event-detail-title-row">
+        <span class="tour-color-dot" style="background:${_esc(tour.colorHex || 'var(--tour-color)')}"></span>
+        <h1 class="event-detail-summary">${_esc(event.summary)}</h1>
+      </div>
       <div class="event-detail-meta">
         <span>${formatDateLong(event.startDate)}</span>
         ${event.venue ? `<span>${_esc(event.venue)}${event.city ? ', ' + _esc(event.city) : ''}</span>` : ''}
@@ -99,11 +102,25 @@ function _render(container, event, daysheet, setlist, venueNote, tour, busSheets
     </div>
   `;
 
-  // Day Sheet section
-  if (daysheet) {
-    html += '<div class="section-subheader">DAY SHEET</div>';
+  // Location section with Maps links
+  if (event.venue || event.city) {
+    const query = encodeURIComponent([event.venue, event.city].filter(Boolean).join(', '));
+    html += '<div class="section-subheader">LOCATION</div>';
     html += '<div class="card">';
+    html += `<div class="card-body">
+      <div style="font-size:15px;margin-bottom:10px">${_esc(event.venue || '')}${event.city ? (event.venue ? ', ' : '') + _esc(event.city) : ''}</div>
+      <div class="maps-buttons">
+        <a href="https://maps.apple.com/?q=${query}" target="_blank" class="btn btn-sm btn-secondary maps-btn">Apple Maps</a>
+        <a href="https://www.google.com/maps/search/?api=1&query=${query}" target="_blank" class="btn btn-sm btn-secondary maps-btn">Google Maps</a>
+      </div>
+    </div>`;
+    html += '</div>';
+  }
 
+  // Day Sheet section
+  html += '<div class="section-subheader">DAY SHEET</div>';
+  if (daysheet) {
+    html += '<div class="card">';
     const items = daySheetService.getScheduleItems(daysheet);
     if (items.length > 0) {
       for (const item of items) {
@@ -120,18 +137,18 @@ function _render(container, event, daysheet, setlist, venueNote, tour, busSheets
     } else {
       html += '<div class="card-body" style="color:var(--text-secondary)">No schedule items</div>';
     }
-
     if (daysheet.notes) {
       html += `<div class="daysheet-notes">${_esc(daysheet.notes)}</div>`;
     }
-
     html += '</div>';
+  } else {
+    html += '<div class="card"><div class="card-body empty-section-text">No day sheet yet</div></div>';
   }
 
   // Setlist section
+  html += '<div class="section-subheader">SETLIST</div>';
   if (setlist && setlist.entries.length > 0) {
     const totalDuration = setlistService.getTotalDuration(setlist);
-    html += '<div class="section-subheader">SETLIST</div>';
     html += '<div class="card">';
 
     for (let i = 0; i < setlist.entries.length; i++) {
@@ -163,20 +180,26 @@ function _render(container, event, daysheet, setlist, venueNote, tour, busSheets
     }
 
     html += '</div>';
+  } else {
+    html += '<div class="card"><div class="card-body empty-section-text">No setlist yet</div></div>';
   }
 
   // Venue notes section
-  if (venueNote && canView(role, 'venue')) {
+  if (canView(role, 'venue')) {
     html += '<div class="section-subheader">VENUE INFO</div>';
-    html += '<div class="card">';
-    html += _renderVenueFields(venueNote);
-    html += '</div>';
+    if (venueNote) {
+      html += '<div class="card">';
+      html += _renderVenueFields(venueNote);
+      html += '</div>';
+    } else {
+      html += '<div class="card"><div class="card-body empty-section-text">No venue info yet</div></div>';
+    }
   }
 
   // Bus Stock section
+  const eventDateISO = formatDateISO(new Date(event.startDate));
+  html += '<div class="section-subheader">BUS STOCK</div>';
   if (busSheets.length > 0) {
-    const eventDateISO = formatDateISO(new Date(event.startDate));
-    html += '<div class="section-subheader">BUS STOCK</div>';
     html += '<div class="card">';
     for (let i = 0; i < busSheets.length; i++) {
       const { bus, sheet } = busSheets[i];
@@ -196,6 +219,8 @@ function _render(container, event, daysheet, setlist, venueNote, tour, busSheets
       }
     }
     html += '</div>';
+  } else {
+    html += '<div class="card"><div class="card-body empty-section-text">No bus stock yet</div></div>';
   }
 
   // Event notes
@@ -265,6 +290,3 @@ function _esc(str) {
   return div.innerHTML;
 }
 
-// Re-export setlistService for the render function
-import { setlistService as _ss } from '../services/setlist-service.js';
-import { venueService as _vs } from '../services/venue-service.js';

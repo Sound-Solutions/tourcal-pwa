@@ -299,49 +299,6 @@
   resize: vertical;
 }
 
-/* Bottom tab bar */
-.tab-bar {
-  display: flex;
-  background: var(--bg-secondary);
-  border-top: 1px solid var(--separator);
-}
-
-.tab-item {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  padding: 6px 0 2px;
-  gap: 2px;
-  cursor: pointer;
-  color: var(--text-tertiary);
-  text-decoration: none;
-  transition: color 0.15s;
-  min-height: var(--nav-height);
-  border: none;
-  background: none;
-  font-family: inherit;
-}
-
-.tab-item.active {
-  color: var(--tour-color);
-}
-
-.tab-item:active {
-  opacity: 0.7;
-}
-
-.tab-icon {
-  font-size: 22px;
-  line-height: 1;
-}
-
-.tab-label {
-  font-size: 10px;
-  font-weight: 500;
-}
-
 /* Section headers */
 .section-header {
   font-size: 22px;

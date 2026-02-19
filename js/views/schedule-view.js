@@ -2,6 +2,7 @@
 
 import { tourService } from '../services/tour-service.js';
 import { eventService } from '../services/event-service.js';
+import { authService } from '../services/auth.js';
 import { formatDateShort, formatDateLong, formatTime } from '../models/formatters.js';
 import { setupPullToRefresh } from '../components/pull-to-refresh.js';
 
@@ -13,6 +14,17 @@ export async function renderScheduleView() {
     window.location.hash = '#/tours';
     return;
   }
+
+  // Set header with sign-out button
+  document.getElementById('header-actions').innerHTML = `
+    <button class="sign-out-btn" id="schedule-sign-out" title="Sign Out">&#9211;</button>
+  `;
+  document.getElementById('schedule-sign-out')?.addEventListener('click', async () => {
+    if (!confirm('Sign out of TourCal?')) return;
+    await authService.signOut();
+    tourService.activeTour = null;
+    window.location.hash = '#/';
+  });
 
   content.innerHTML = `
     <div class="loading-container">

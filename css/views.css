@@ -149,6 +149,31 @@
 /* Schedule View */
 .schedule-view {
   padding: 0 16px 16px;
+  padding-bottom: calc(16px + var(--safe-bottom));
+}
+
+.schedule-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.sign-out-btn {
+  background: none;
+  border: none;
+  color: var(--text-tertiary);
+  font-size: 20px;
+  padding: 6px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  transition: background 0.15s;
+}
+
+.sign-out-btn:active {
+  background: var(--bg-tertiary);
 }
 
 .event-card {
@@ -211,16 +236,31 @@
 /* Event Detail View */
 .event-detail-view {
   padding: 16px;
+  padding-bottom: calc(16px + var(--safe-bottom));
 }
 
 .event-detail-header {
   margin-bottom: 16px;
 }
 
+.event-detail-title-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.tour-color-dot {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
 .event-detail-summary {
   font-size: 24px;
   font-weight: 700;
-  margin-bottom: 8px;
+  margin: 0;
 }
 
 .event-detail-meta {
@@ -231,8 +271,23 @@
   font-size: 15px;
 }
 
-.event-detail-tabs {
-  margin-bottom: 16px;
+.maps-buttons {
+  display: flex;
+  gap: 8px;
+}
+
+.maps-btn {
+  font-size: 14px !important;
+  font-weight: 500 !important;
+  padding: 6px 14px !important;
+  min-height: 34px !important;
+  text-decoration: none;
+}
+
+.empty-section-text {
+  color: var(--text-tertiary);
+  font-size: 15px;
+  font-style: italic;
 }
 
 /* Day Sheet View */
@@ -455,132 +510,6 @@
   font-family: inherit;
 }
 
-/* Crew View */
-.crew-view {
-  padding: 0 16px 16px;
-}
-
-.crew-department-header {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 16px 0 8px;
-}
-
-.crew-department-dot {
-  width: 10px;
-  height: 10px;
-  border-radius: 50%;
-}
-
-.crew-department-name {
-  font-size: 15px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  color: var(--text-secondary);
-}
-
-.crew-member {
-  display: flex;
-  align-items: center;
-  padding: 12px 16px;
-  gap: 12px;
-}
-
-.crew-member + .crew-member {
-  border-top: 1px solid var(--separator);
-}
-
-.crew-avatar {
-  width: 40px;
-  height: 40px;
-  border-radius: 20px;
-  background: var(--bg-tertiary);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 16px;
-  font-weight: 600;
-  color: var(--text-secondary);
-  flex-shrink: 0;
-}
-
-.crew-info {
-  flex: 1;
-  min-width: 0;
-}
-
-.crew-name {
-  font-size: 17px;
-  font-weight: 500;
-}
-
-.crew-role {
-  font-size: 13px;
-  color: var(--text-secondary);
-  margin-top: 2px;
-}
-
-.crew-actions {
-  display: flex;
-  gap: 12px;
-}
-
-.crew-action-btn {
-  width: 36px;
-  height: 36px;
-  border-radius: 18px;
-  background: var(--bg-tertiary);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  text-decoration: none;
-  font-size: 18px;
-  color: var(--tour-color);
-}
-
-/* Announcements View */
-.announcements-view {
-  padding: 16px;
-}
-
-.announcement-card {
-  background: var(--bg-secondary);
-  border-radius: var(--radius-md);
-  padding: 16px;
-  margin-bottom: 12px;
-}
-
-.announcement-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 8px;
-}
-
-.announcement-title {
-  font-size: 17px;
-  font-weight: 600;
-  flex: 1;
-}
-
-.announcement-body {
-  font-size: 15px;
-  color: var(--text-secondary);
-  line-height: 1.5;
-  white-space: pre-wrap;
-}
-
-.announcement-footer {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-top: 12px;
-  font-size: 13px;
-  color: var(--text-tertiary);
-}
-
 /* Edit mode */
 .edit-bar {
   display: flex;
@@ -607,7 +536,3 @@
   outline: none;
 }
 
-/* More/Settings View */
-.more-view {
-  padding: 16px;
-}

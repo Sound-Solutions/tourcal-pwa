@@ -3,19 +3,13 @@
 import { authService } from './services/auth.js';
 import { tourService } from './services/tour-service.js';
 import { router } from './router.js';
-import { renderNavBar, getActiveTab } from './components/nav-bar.js';
 import { renderTourPicker } from './components/tour-picker.js';
 import { renderAuthView, cleanupAuthView } from './views/auth-view.js';
 import { renderTourListView } from './views/tour-list-view.js';
 import { renderScheduleView } from './views/schedule-view.js';
 import { renderEventDetailView } from './views/event-detail-view.js';
-import { renderSetlistView } from './views/setlist-view.js';
-import { renderBusStockView, renderBusStockSheetView } from './views/busstock-view.js';
-import { renderVenueNotesListView, renderVenueNoteDetailView } from './views/venue-notes-view.js';
-import { renderCrewView } from './views/crew-view.js';
-import { renderAnnouncementsView } from './views/announcements-view.js';
+import { renderBusStockSheetView } from './views/busstock-view.js';
 import { renderInviteView } from './views/invite-view.js';
-import { showToast } from './components/toast.js';
 
 // Apply tour color theming
 function applyTourColor(tour) {
@@ -83,120 +77,10 @@ router
   .on('#/event/:id', requireTour(async (params) => {
     await renderEventDetailView(params);
   }))
-  .on('#/setlists', requireTour(async () => {
-    updateHeaderForTour();
-    await renderSetlistView();
-  }))
-  .on('#/busstock', requireTour(async () => {
-    updateHeaderForTour();
-    await renderBusStockView();
-  }))
   .on('#/busstock/:busId/:date', requireTour(async (params) => {
     updateHeaderForTour();
     await renderBusStockSheetView(params);
-  }))
-  .on('#/venue', requireTour(async () => {
-    updateHeaderForTour();
-    await renderVenueNotesListView();
-  }))
-  .on('#/venue/:venueKey', requireTour(async (params) => {
-    await renderVenueNoteDetailView(params);
-  }))
-  .on('#/crew', requireTour(async () => {
-    updateHeaderForTour();
-    await renderCrewView();
-  }))
-  .on('#/announcements', requireTour(async () => {
-    updateHeaderForTour();
-    await renderAnnouncementsView();
-  }))
-  .on('#/more', requireTour(async () => {
-    updateHeaderForTour();
-    _renderMoreView();
   }));
-
-// Update nav bar on route change
-router.onNavigate((pattern, params) => {
-  const tour = tourService.activeTour;
-  if (tour && pattern !== '#/tours') {
-    const activeTab = getActiveTab(pattern);
-    renderNavBar(activeTab, tour.role);
-  }
-});
-
-// More view (settings/links)
-function _renderMoreView() {
-  const content = document.getElementById('app-content');
-  const tour = tourService.activeTour;
-
-  let html = '<div class="more-view">';
-  html += '<div class="list-group">';
-
-  html += `
-    <a class="list-item" href="#/crew">
-      <div class="list-item-icon" style="background:var(--system-blue)22;color:var(--system-blue)">&#128101;</div>
-      <div class="list-item-content">
-        <div class="list-item-title">Crew Directory</div>
-      </div>
-      <span class="list-item-chevron"></span>
-    </a>
-    <a class="list-item" href="#/announcements">
-      <div class="list-item-icon" style="background:var(--system-orange)22;color:var(--system-orange)">&#128227;</div>
-      <div class="list-item-content">
-        <div class="list-item-title">Announcements</div>
-      </div>
-      <span class="list-item-chevron"></span>
-    </a>
-  `;
-
-  html += '</div>';
-
-  // Account section
-  html += '<div class="section-subheader" style="margin-top:24px">ACCOUNT</div>';
-  html += '<div class="list-group">';
-  html += `
-    <a class="list-item" href="#/tours">
-      <div class="list-item-content">
-        <div class="list-item-title">Change Tour</div>
-        <div class="list-item-subtitle">${_esc(tour?.name || '')}</div>
-      </div>
-      <span class="list-item-chevron"></span>
-    </a>
-  `;
-  html += `
-    <div class="list-item" id="sign-out-btn" style="cursor:pointer">
-      <div class="list-item-content">
-        <div class="list-item-title" style="color:var(--system-red)">Sign Out</div>
-      </div>
-    </div>
-  `;
-  html += '</div>';
-
-  // App info
-  html += `
-    <div style="text-align:center;padding:24px;color:var(--text-tertiary);font-size:13px">
-      TourCal PWA<br>
-      Built for Android tour crew access
-    </div>
-  `;
-
-  html += '</div>';
-  content.innerHTML = html;
-
-  // Sign out handler
-  document.getElementById('sign-out-btn')?.addEventListener('click', async () => {
-    await authService.signOut();
-    tourService.activeTour = null;
-    window.location.hash = '#/';
-  });
-}
-
-function _esc(str) {
-  if (!str) return '';
-  const div = document.createElement('div');
-  div.textContent = str;
-  return div.innerHTML;
-}
 
 // Initialize app
 async function init() {
