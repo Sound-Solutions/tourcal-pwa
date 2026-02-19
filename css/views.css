@@ -161,19 +161,18 @@
 .sign-out-btn {
   background: none;
   border: none;
-  color: var(--text-tertiary);
-  font-size: 20px;
-  padding: 6px;
+  color: var(--system-red);
+  font-size: 15px;
+  font-weight: 500;
+  font-family: inherit;
+  padding: 6px 10px;
   cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
   border-radius: 6px;
-  transition: background 0.15s;
+  transition: opacity 0.15s;
 }
 
 .sign-out-btn:active {
-  background: var(--bg-tertiary);
+  opacity: 0.6;
 }
 
 .event-card {

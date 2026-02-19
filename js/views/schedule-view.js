@@ -17,7 +17,7 @@ export async function renderScheduleView() {
 
   // Set header with sign-out button
   document.getElementById('header-actions').innerHTML = `
-    <button class="sign-out-btn" id="schedule-sign-out" title="Sign Out">&#9211;</button>
+    <button class="sign-out-btn" id="schedule-sign-out">Sign Out</button>
   `;
   document.getElementById('schedule-sign-out')?.addEventListener('click', async () => {
     if (!confirm('Sign out of TourCal?')) return;
