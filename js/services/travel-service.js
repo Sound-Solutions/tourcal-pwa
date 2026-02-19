@@ -6,6 +6,17 @@ const NOMINATIM_BASE = 'https://nominatim.openstreetmap.org/search';
 const OSRM_BASE = 'https://router.project-osrm.org/route/v1/driving';
 const CACHE_TTL = 7 * 24 * 3600000; // 7 days
 
+// 2-letter codes that overlap with US state abbreviations → country names
+const COUNTRY_CODE_MAP = {
+  AL: 'Albania',  AR: 'Argentina', CO: 'Colombia',
+  DE: 'Germany',  GA: 'Georgia',   ID: 'Indonesia',
+  IL: 'Israel',   IN: 'India',     LA: 'Laos',
+  MA: 'Morocco',  MD: 'Moldova',   ME: 'Montenegro',
+  MN: 'Mongolia', MO: 'Monaco',    MT: 'Malta',
+  NC: 'New Caledonia', NE: 'Netherlands',
+  PA: 'Panama',   SC: 'Seychelles', VA: 'Vatican City',
+};
+
 class TravelService {
   constructor() {
     this._geocodeQueue = Promise.resolve();
@@ -183,7 +194,28 @@ class TravelService {
   _enqueueGeocode(city) {
     this._geocodeQueue = this._geocodeQueue.then(async () => {
       await this._sleep(1100); // Nominatim rate limit
-      return this._doGeocode(city);
+      let result = await this._doGeocode(city);
+
+      // If failed and ends with a 2-letter code that overlaps with a US state,
+      // retry with the full country name (e.g. "LANDGRAAF, NE" → "LANDGRAAF, Netherlands")
+      if (!result) {
+        const parts = city.split(',').map(s => s.trim());
+        if (parts.length >= 2) {
+          const suffix = parts[parts.length - 1];
+          if (suffix.length === 2) {
+            const countryName = COUNTRY_CODE_MAP[suffix.toUpperCase()];
+            if (countryName) {
+              const cityPart = parts.slice(0, -1).join(', ');
+              const expanded = `${cityPart}, ${countryName}`;
+              console.log(`[TravelService] Retrying with country name: '${expanded}'`);
+              await this._sleep(1100);
+              result = await this._doGeocode(expanded);
+            }
+          }
+        }
+      }
+
+      return result;
     });
     return this._geocodeQueue;
   }

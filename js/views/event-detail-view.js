@@ -6,6 +6,7 @@ import { daySheetService } from '../services/daysheet-service.js';
 import { setlistService } from '../services/setlist-service.js';
 import { venueService } from '../services/venue-service.js';
 import { busStockService } from '../services/busstock-service.js';
+import { travelService } from '../services/travel-service.js';
 import { formatDateLong, formatDateISO, formatTime, formatTimeRange, formatDuration, formatDurationHM, formatSMPTE } from '../models/formatters.js';
 import { canView } from '../models/permissions.js';
 import { cache } from '../services/cache.js';
@@ -66,7 +67,24 @@ export async function renderEventDetailView({ id }) {
       busSheets.push(...await Promise.all(sheetPromises));
     }
 
-    _render(content, event, daysheet, setlist, venueNote, tour, busSheets);
+    // Find the next event with a different city for travel card
+    const allEvents = (cachedEvents || [])
+      .filter(e => e.startDate)
+      .sort((a, b) => new Date(a.startDate) - new Date(b.startDate));
+    const thisIdx = allEvents.findIndex(e => e.recordName === id);
+    let nextEvent = null;
+    if (thisIdx >= 0 && event.city) {
+      const currentCity = event.city.toLowerCase().trim();
+      for (let i = thisIdx + 1; i < allEvents.length; i++) {
+        const nextCity = (allEvents[i].city || '').toLowerCase().trim();
+        if (nextCity && nextCity !== currentCity) {
+          nextEvent = allEvents[i];
+          break;
+        }
+      }
+    }
+
+    _render(content, event, daysheet, setlist, venueNote, tour, busSheets, nextEvent);
   } catch (e) {
     console.error('Error loading event detail:', e);
     content.innerHTML = `
@@ -80,7 +98,7 @@ export async function renderEventDetailView({ id }) {
   }
 }
 
-function _render(container, event, daysheet, setlist, venueNote, tour, busSheets = []) {
+function _render(container, event, daysheet, setlist, venueNote, tour, busSheets = [], nextEvent = null) {
   const tz = event.timeZoneIdentifier;
   const role = tour.role;
 
@@ -115,6 +133,28 @@ function _render(container, event, daysheet, setlist, venueNote, tour, busSheets
       </div>
     </div>`;
     html += '</div>';
+  }
+
+  // Travel card to next city
+  if (nextEvent && nextEvent.city) {
+    const fromCity = event.city;
+    const toCity = nextEvent.city;
+    const dirUrl = `https://www.google.com/maps/dir/?api=1&origin=${encodeURIComponent(fromCity)}&destination=${encodeURIComponent(toCity)}&travelmode=driving`;
+    html += '<div class="section-subheader">TRAVEL</div>';
+    html += `
+      <div class="card">
+        <div class="travel-detail-card" id="travel-card-detail">
+          <div class="travel-detail-dest">
+            <span class="travel-detail-arrow">&#8594;</span>
+            <span>${_esc(nextEvent.venue ? nextEvent.venue + ', ' + toCity : toCity)}</span>
+          </div>
+          <div class="travel-detail-info" id="travel-info-placeholder">Calculating...</div>
+          <a href="${dirUrl}" target="_blank" class="btn btn-sm btn-secondary travel-detail-link">Google Maps Directions</a>
+        </div>
+      </div>
+    `;
+    // Async load travel data after render
+    setTimeout(() => _loadTravelInfo(fromCity, toCity), 0);
   }
 
   // Day Sheet section
@@ -281,6 +321,26 @@ function _renderVenueFields(v) {
   html += field('Notes', v.notes);
 
   return html;
+}
+
+async function _loadTravelInfo(fromCity, toCity) {
+  const el = document.getElementById('travel-info-placeholder');
+  if (!el) return;
+  try {
+    const travel = await travelService.travelBetween(fromCity, toCity);
+    if (travel) {
+      if (travel.isFlight) {
+        el.textContent = `${travel.formattedDistance} (flight)`;
+      } else {
+        el.textContent = `${travel.formattedDuration} drive · ${travel.formattedDistance}`;
+      }
+    } else {
+      el.textContent = '';
+    }
+  } catch (e) {
+    console.warn('[EventDetail] Travel info error:', e);
+    el.textContent = '';
+  }
 }
 
 function _esc(str) {

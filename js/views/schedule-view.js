@@ -1,8 +1,7 @@
-// Schedule View - Events grouped by date with travel cards
+// Schedule View - Events grouped by date
 
 import { tourService } from '../services/tour-service.js';
 import { eventService } from '../services/event-service.js';
-import { travelService } from '../services/travel-service.js';
 import { authService } from '../services/auth.js';
 import { formatDateShort, formatDateLong, formatTime } from '../models/formatters.js';
 import { setupPullToRefresh } from '../components/pull-to-refresh.js';
@@ -16,8 +15,11 @@ export async function renderScheduleView() {
     return;
   }
 
-  // Set header with sign-out button
+  // Set header with route button and sign-out button
   document.getElementById('header-actions').innerHTML = `
+    <a href="#/route" class="btn btn-sm btn-secondary route-btn" style="margin-right:8px">
+      <span class="route-btn-icon">&#128506;</span> Route
+    </a>
     <button class="sign-out-btn" id="schedule-sign-out">Sign Out</button>
   `;
   document.getElementById('schedule-sign-out')?.addEventListener('click', async () => {
@@ -73,53 +75,13 @@ function _render(container, events, tour) {
   let html = '<div class="schedule-view">';
   html += '<div id="ptr-zone" class="ptr-indicator"><div class="ptr-spinner"></div></div>';
 
-  // Route button
-  html += `
-    <div class="schedule-actions">
-      <a href="#/route" class="btn btn-sm btn-secondary route-btn">
-        <span class="route-btn-icon">&#128506;</span> Route Map
-      </a>
-    </div>
-  `;
-
   // Find the nearest upcoming date to auto-scroll to
   let scrollTarget = null;
-  let prevCity = null;
-  const travelPairs = []; // track which travel cards need data
 
   for (const [dateKey, dayEvents] of groups) {
     const isToday = dateKey === today;
     const isPast = dateKey < today;
     if (!scrollTarget && dateKey >= today) scrollTarget = dateKey;
-
-    // Get the city for the first event of this date group
-    const firstCity = dayEvents[0]?.city || '';
-
-    // Insert travel card if city changed
-    if (prevCity && firstCity && prevCity.toLowerCase().trim() !== firstCity.toLowerCase().trim()) {
-      const pairId = `travel-${_slug(prevCity)}-${_slug(firstCity)}`;
-      travelPairs.push({ id: pairId, from: prevCity, to: firstCity });
-      html += `
-        <div class="travel-card" id="${pairId}">
-          <div class="travel-card-icon">
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-              <path d="M8 1v14M8 15l-4-4M8 15l4-4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-            </svg>
-          </div>
-          <div class="travel-card-body">
-            <span class="travel-card-dest">${_esc(firstCity)}</span>
-            <span class="travel-card-info">Calculating...</span>
-          </div>
-          <a class="travel-card-link" href="https://www.google.com/maps/dir/?api=1&origin=${encodeURIComponent(prevCity)}&destination=${encodeURIComponent(firstCity)}&travelmode=driving" target="_blank">
-            Directions
-          </a>
-        </div>
-      `;
-    }
-
-    // Track the last city of this date group
-    const lastEvent = dayEvents[dayEvents.length - 1];
-    prevCity = lastEvent?.city || firstCity || prevCity;
 
     html += `
       <div class="date-header" id="date-${dateKey}" ${isPast ? 'style="opacity: 0.6"' : ''}>
@@ -165,38 +127,6 @@ function _render(container, events, tour) {
     const events = await eventService.fetchEvents(tour);
     _render(container, events, tour);
   });
-
-  // Async: fill in travel card data
-  _loadTravelCards(travelPairs);
-}
-
-async function _loadTravelCards(pairs) {
-  for (const { id, from, to } of pairs) {
-    const el = document.getElementById(id);
-    if (!el) continue;
-
-    const info = el.querySelector('.travel-card-info');
-    try {
-      const travel = await travelService.travelBetween(from, to);
-      if (travel && info) {
-        if (travel.isFlight) {
-          info.textContent = `${travel.formattedDistance} (flight)`;
-        } else {
-          info.textContent = `${travel.formattedDuration} · ${travel.formattedDistance}`;
-        }
-        el.classList.add('travel-card-loaded');
-      } else if (info) {
-        info.textContent = '';
-      }
-    } catch (e) {
-      console.warn(`[Schedule] Travel card error for ${from} → ${to}:`, e);
-      if (info) info.textContent = '';
-    }
-  }
-}
-
-function _slug(str) {
-  return (str || '').toLowerCase().trim().replace(/[^a-z0-9]+/g, '-');
 }
 
 function _esc(str) {

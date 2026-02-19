@@ -737,3 +737,38 @@
   color: var(--text-secondary) !important;
 }
 
+/* ---- Travel Detail Card (Event Detail View) ---- */
+
+.travel-detail-card {
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.travel-detail-dest {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.travel-detail-arrow {
+  color: var(--tour-color);
+  font-size: 18px;
+}
+
+.travel-detail-info {
+  font-size: 14px;
+  color: var(--text-secondary);
+  padding-left: 26px;
+}
+
+.travel-detail-link {
+  align-self: flex-start;
+  margin-left: 26px;
+  font-size: 13px;
+}
+
