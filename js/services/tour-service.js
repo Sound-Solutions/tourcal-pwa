@@ -208,6 +208,7 @@ class TourService {
     for (const tour of tours) {
       if (!tour.isShared) continue;
       try {
+        // Query for CrewMember matching this user's identity
         const res = await authService.apiFetch('/shared/records/query', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -224,6 +225,57 @@ class TourService {
           })
         });
         const data = await res.json();
+
+        // If no match, also check for a stale '_pending_' claim left by a previous
+        // broken invite flow — fix it up by re-claiming with the real identity.
+        if (!data.records?.length) {
+          const pendingRes = await authService.apiFetch('/shared/records/query', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              zoneID: tour.zoneID,
+              query: {
+                recordType: 'CrewMember',
+                filterBy: [{
+                  comparator: 'EQUALS',
+                  fieldName: 'userRecordName',
+                  fieldValue: { value: '_pending_', type: 'STRING' }
+                }]
+              }
+            })
+          });
+          const pendingData = await pendingRes.json();
+          if (pendingData.records?.length > 0) {
+            console.warn(`[TourService] Found _pending_ CrewMember in ${tour.name}, re-claiming with real identity`);
+            const staleRecord = pendingData.records[0];
+            try {
+              await authService.apiFetch('/shared/records/modify', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  zoneID: tour.zoneID,
+                  operations: [{
+                    operationType: 'forceUpdate',
+                    record: {
+                      recordName: staleRecord.recordName,
+                      recordType: 'CrewMember',
+                      recordChangeTag: staleRecord.recordChangeTag,
+                      fields: {
+                        userRecordName: { value: userRecordName },
+                        updatedAt: { value: Date.now(), type: 'TIMESTAMP' }
+                      }
+                    }
+                  }]
+                })
+              });
+              // Use this record for role enrichment
+              data.records = [staleRecord];
+            } catch (fixErr) {
+              console.warn('[TourService] Failed to fix stale _pending_ claim:', fixErr);
+            }
+          }
+        }
+
         if (data.records?.length > 0) {
           const f = data.records[0].fields || {};
           const role = f.role?.value;

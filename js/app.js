@@ -10,6 +10,7 @@ import { renderScheduleView } from './views/schedule-view.js';
 import { renderEventDetailView } from './views/event-detail-view.js';
 import { renderBusStockSheetView } from './views/busstock-view.js';
 import { renderInviteView } from './views/invite-view.js';
+import { renderRouteView } from './views/route-view.js';
 
 // Apply tour color theming
 function applyTourColor(tour) {
@@ -80,6 +81,9 @@ router
   .on('#/busstock/:busId/:date', requireTour(async (params) => {
     updateHeaderForTour();
     await renderBusStockSheetView(params);
+  }))
+  .on('#/route', requireTour(async () => {
+    await renderRouteView();
   }));
 
 // Initialize app

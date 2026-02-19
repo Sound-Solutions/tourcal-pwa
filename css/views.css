@@ -535,3 +535,205 @@
   outline: none;
 }
 
+/* ---- Travel Cards (Schedule) ---- */
+
+.schedule-actions {
+  display: flex;
+  justify-content: flex-end;
+  padding: 8px 16px 0;
+}
+
+.route-btn {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 13px;
+  text-decoration: none;
+}
+
+.route-btn-icon {
+  font-size: 14px;
+}
+
+.travel-card {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 4px 16px;
+  padding: 8px 12px;
+  background: var(--bg-secondary);
+  border-radius: var(--radius-sm);
+  border-left: 3px solid var(--tour-color);
+  opacity: 0.8;
+  transition: opacity 0.3s;
+}
+
+.travel-card-loaded {
+  opacity: 1;
+}
+
+.travel-card-icon {
+  color: var(--tour-color);
+  flex-shrink: 0;
+}
+
+.travel-card-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.travel-card-dest {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.travel-card-info {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.travel-card-link {
+  font-size: 12px;
+  color: var(--tour-color);
+  text-decoration: none;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+/* ---- Route Map View ---- */
+
+.route-view {
+  position: relative;
+  width: 100%;
+  height: calc(100vh - 56px);
+  height: calc(100dvh - 56px);
+}
+
+.route-map {
+  width: 100%;
+  height: 100%;
+}
+
+.route-loading {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  background: var(--bg-primary);
+  z-index: 500;
+}
+
+/* Stop pin markers */
+.route-stop-icon {
+  background: none !important;
+  border: none !important;
+}
+
+.route-stop-pin {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 22px;
+  height: 22px;
+  border-radius: 11px;
+  color: white;
+  font-size: 10px;
+  font-weight: 700;
+  border: 1.5px solid white;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.3);
+  padding: 0 2px;
+}
+
+.route-stop-capsule {
+  border-radius: 11px;
+  padding: 0 7px;
+}
+
+/* Stop detail overlay */
+.route-overlay {
+  position: absolute;
+  bottom: 16px;
+  left: 16px;
+  right: 16px;
+  z-index: 1000;
+}
+
+.route-stop-detail {
+  position: relative;
+  padding: 14px 16px;
+  background: var(--bg-secondary);
+  border-radius: var(--radius-md);
+  box-shadow: 0 4px 16px rgba(0,0,0,0.3);
+  -webkit-backdrop-filter: blur(20px);
+  backdrop-filter: blur(20px);
+}
+
+.route-stop-venue {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.route-stop-city {
+  font-size: 14px;
+  color: var(--text-secondary);
+  margin-top: 2px;
+}
+
+.route-stop-date {
+  font-size: 12px;
+  color: var(--text-tertiary);
+  margin-top: 3px;
+}
+
+.route-stop-close {
+  position: absolute;
+  top: 8px;
+  right: 12px;
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  font-size: 20px;
+  cursor: pointer;
+  padding: 4px;
+  line-height: 1;
+}
+
+/* Leaflet overrides for dark mode */
+.leaflet-container {
+  background: #1a1a2e;
+}
+
+.leaflet-tile {
+  filter: brightness(0.8) contrast(1.1) saturate(0.8);
+}
+
+.leaflet-control-zoom a {
+  background: var(--bg-secondary) !important;
+  color: var(--text-primary) !important;
+  border-color: var(--separator) !important;
+}
+
+.leaflet-control-attribution {
+  background: rgba(0,0,0,0.5) !important;
+  color: var(--text-tertiary) !important;
+  font-size: 10px !important;
+}
+
+.leaflet-control-attribution a {
+  color: var(--text-secondary) !important;
+}
+

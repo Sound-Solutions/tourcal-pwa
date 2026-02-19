@@ -249,24 +249,32 @@ class AuthService {
     }
   }
 
-  // Background resolve of user identity after pending auth (one attempt only)
+  // Resolve user identity from a pending state. Can be called multiple times —
+  // subsequent calls return the same in-flight promise to avoid duplicate requests.
   async _resolveUser(token) {
-    if (this._resolveAttempted) return;
-    this._resolveAttempted = true;
-    try {
-      const user = await this._validateToken(token);
-      if (user) {
-        this._user = user;
-        console.log('[Auth] Resolved pending user:', user.userRecordName);
+    if (this._resolvePromise) return this._resolvePromise;
+    this._resolvePromise = (async () => {
+      try {
+        const user = await this._validateToken(token);
+        if (user) {
+          this._user = user;
+          console.log('[Auth] Resolved pending user:', user.userRecordName);
+        }
+      } catch (e) {
+        console.warn('[Auth] Identity resolution failed:', e.message || e);
+      } finally {
+        this._resolvePromise = null;
       }
-    } catch (e) { /* ignore */ }
+    })();
+    return this._resolvePromise;
   }
 
-  // Public: explicitly kick off identity resolution (e.g. from invite view)
-  resolveIdentityNow() {
+  // Public: explicitly kick off identity resolution (e.g. from invite view).
+  // Returns a promise that resolves when identity is known (or resolution fails).
+  async resolveIdentityNow() {
     const token = this._webAuthToken || localStorage.getItem(TOKEN_KEY);
     if (token && this._user?.userRecordName === '_pending_') {
-      this._resolveUser(token);
+      await this._resolveUser(token);
     }
   }
 
