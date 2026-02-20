@@ -116,6 +116,14 @@ html, body {
   align-items: center;
 }
 
+#header-tour-picker {
+  padding: 0 16px 8px;
+}
+
+#header-tour-picker.hidden {
+  display: none;
+}
+
 #app-content {
   flex: 1;
   overflow-y: auto;

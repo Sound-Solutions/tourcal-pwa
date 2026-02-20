@@ -22,7 +22,7 @@ export async function renderRouteView() {
     return;
   }
 
-  document.getElementById('header-title').textContent = tour.name || 'Route';
+  document.getElementById('header-title').textContent = 'Route';
   document.getElementById('header-actions').innerHTML = `
     <button class="btn btn-text" onclick="window.location.hash='#/'">&#8249; Schedule</button>
   `;

@@ -28,9 +28,17 @@ function applyTourColor(tour) {
 function updateHeaderForTour() {
   const tour = tourService.activeTour;
   if (tour) {
-    renderTourPicker(document.getElementById('header-title'));
+    document.getElementById('header-title').textContent = 'TourCal';
+    const pickerEl = document.getElementById('header-tour-picker');
+    pickerEl.classList.remove('hidden');
+    renderTourPicker(pickerEl);
     applyTourColor(tour);
   }
+}
+
+// Hide tour picker row (for non-tour views)
+function hideHeaderTourPicker() {
+  document.getElementById('header-tour-picker')?.classList.add('hidden');
 }
 
 // Route guard: ensure auth
@@ -70,12 +78,15 @@ router
     await renderScheduleView();
   }))
   .on('#/tours', requireAuth(async () => {
+    hideHeaderTourPicker();
     await renderTourListView();
   }))
   .on('#/invite/:token', requireAuth(async (params) => {
+    hideHeaderTourPicker();
     await renderInviteView(params);
   }))
   .on('#/event/:id', requireTour(async (params) => {
+    updateHeaderForTour();
     await renderEventDetailView(params);
   }))
   .on('#/busstock/:busId', requireTour(async (params) => {
@@ -83,6 +94,7 @@ router
     await renderBusStockSheetView(params);
   }))
   .on('#/route', requireTour(async () => {
+    updateHeaderForTour();
     await renderRouteView();
   }));
 
