@@ -247,37 +247,44 @@ function _render(container) {
 
   // Recent Receipts section
   if (receipts.length > 0) {
+    const totalPurchased = receipts.reduce((sum, r) => sum + r.items.length, 0);
     html += `
       <div style="margin-top:24px">
         <button class="btn btn-text" id="toggle-receipts" style="width:100%;display:flex;align-items:center;justify-content:space-between;padding:10px 0;color:var(--text-secondary);font-weight:600">
-          <span>&#128722; Purchase History (${receipts.length})</span>
+          <span>&#128722; Purchased (${totalPurchased})</span>
           <span style="font-size:12px">${_state.showReceipts ? '&#9650;' : '&#9660;'}</span>
         </button>
       </div>
     `;
 
     if (_state.showReceipts) {
-      html += '<div class="card">';
-      for (let i = 0; i < receipts.length; i++) {
-        const r = receipts[i];
+      for (const r of receipts) {
         const dateStr = r.date ? new Date(r.date).toLocaleDateString() : 'Unknown';
         const timeStr = r.purchasedAt ? new Date(r.purchasedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
         html += `
-          <div style="padding:10px 16px${i < receipts.length - 1 ? ';border-bottom:1px solid var(--separator)' : ''}">
-            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
-              <span style="font-weight:500">${dateStr}</span>
-              <span style="font-size:13px;color:var(--text-secondary)">${timeStr}</span>
-            </div>
-            <div style="font-size:13px;color:var(--text-secondary)">
-              ${r.items.length} items purchased
-            </div>
-            <div style="margin-top:6px;font-size:13px;color:var(--text-tertiary)">
-              ${r.items.slice(0, 3).map(it => _esc(it.name)).join(', ')}${r.items.length > 3 ? `, +${r.items.length - 3} more` : ''}
-            </div>
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;padding:0 4px">
+            <span style="font-size:13px;font-weight:500;color:var(--text-secondary)">${dateStr}</span>
+            <span style="font-size:12px;color:var(--text-tertiary)">${timeStr}</span>
           </div>
         `;
+        html += '<div class="card">';
+        for (let i = 0; i < r.items.length; i++) {
+          const item = r.items[i];
+          const subtitleParts = [item.brand, item.size].filter(Boolean);
+          const subtitle = subtitleParts.join(' \u00b7 ');
+          html += `
+            <div style="display:flex;align-items:center;gap:10px;padding:8px 12px${i < r.items.length - 1 ? ';border-bottom:1px solid var(--separator)' : ''}">
+              <span style="color:var(--system-green,#34c759);font-size:16px">&#10003;</span>
+              <div style="flex:1;min-width:0">
+                <div style="font-size:15px">${_esc(item.name)}</div>
+                ${subtitle ? `<div style="font-size:12px;color:var(--text-tertiary)">${_esc(subtitle)}</div>` : ''}
+              </div>
+              <span style="font-size:13px;color:var(--text-secondary);font-variant-numeric:tabular-nums">x${item.quantity || 1}</span>
+            </div>
+          `;
+        }
+        html += '</div>';
       }
-      html += '</div>';
     }
   }
 
