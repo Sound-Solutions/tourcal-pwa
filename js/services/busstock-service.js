@@ -1,4 +1,4 @@
-// Bus Stock Service - Buses, sheets, defaults (REST API)
+// Bus Stock Service - Buses, persistent sheets, defaults, receipts (REST API)
 
 import { tourService } from './tour-service.js';
 import { cache } from './cache.js';
@@ -27,11 +27,10 @@ class BusStockService {
     }
   }
 
-  async fetchSheet(tour, busId, date) {
-    if (!tour || !busId || !date) return null;
+  async fetchSheet(tour, busId) {
+    if (!tour || !busId) return null;
 
-    const dateStr = this._formatDate(date);
-    const recordName = `bus-${busId}-${dateStr}`;
+    const recordName = `bus-${busId}`;
 
     try {
       const record = await lookupRecord(tour, recordName);
@@ -42,24 +41,6 @@ class BusStockService {
       // Sheet may not exist
     }
     return null;
-  }
-
-  async fetchSheetsForBus(tour, busId) {
-    if (!tour || !busId) return [];
-
-    try {
-      const records = await queryRecords(tour, 'BusStockSheet', {
-        filterBy: [stringFilter('busID', busId)],
-        sortBy: [{ fieldName: 'date', ascending: false }]
-      });
-
-      return records
-        .filter(r => !r.serverErrorCode)
-        .map(r => this._parseSheet(r));
-    } catch (e) {
-      console.warn('Error fetching sheets for bus:', e);
-      return [];
-    }
   }
 
   async fetchDefaults(tour, busId) {
@@ -77,12 +58,9 @@ class BusStockService {
   }
 
   async saveSheet(tour, sheet) {
-    const dateStr = this._formatDate(new Date(sheet.date));
-
     const fields = {
       busID: { value: sheet.busID },
       tourID: { value: sheet.tourID || tour.recordName },
-      date: { value: new Date(sheet.date).getTime() },
       notes: { value: sheet.notes || '' },
       isLocked: { value: sheet.isLocked ? 1 : 0 },
       lastUpdated: { value: Date.now() },
@@ -100,7 +78,7 @@ class BusStockService {
 
     const record = {
       recordType: 'BusStockSheet',
-      recordName: `bus-${sheet.busID}-${dateStr}`,
+      recordName: `bus-${sheet.busID}`,
       fields
     };
 
@@ -145,22 +123,148 @@ class BusStockService {
     return this._parseDefaults(saved);
   }
 
+  // --- Receipt Methods ---
+
+  async fetchReceipts(tour, busId) {
+    if (!tour || !busId) return [];
+
+    try {
+      const records = await queryRecords(tour, 'BusStockReceipt', {
+        filterBy: [stringFilter('busID', busId)],
+        sortBy: [{ fieldName: 'purchasedAt', ascending: false }]
+      });
+
+      return records
+        .filter(r => !r.serverErrorCode)
+        .map(r => this._parseReceipt(r));
+    } catch (e) {
+      console.warn('Error fetching receipts:', e);
+      return [];
+    }
+  }
+
+  async fetchReceiptsForDate(tour, busId, date) {
+    if (!tour || !busId || !date) return [];
+
+    const recordName = `receipt-${busId}-${this._formatDate(date)}`;
+
+    try {
+      const record = await lookupRecord(tour, recordName);
+      if (record && !record.serverErrorCode) {
+        return [this._parseReceipt(record)];
+      }
+    } catch (e) {
+      // Receipt may not exist
+    }
+    return [];
+  }
+
+  async fetchAllReceiptsForDate(tour, buses, date) {
+    if (!tour || !buses?.length || !date) return [];
+
+    const dateStr = this._formatDate(date);
+    const promises = buses.map(bus => {
+      const recordName = `receipt-${bus.id}-${dateStr}`;
+      return lookupRecord(tour, recordName)
+        .then(record => {
+          if (record && !record.serverErrorCode) {
+            return { bus, receipt: this._parseReceipt(record) };
+          }
+          return null;
+        })
+        .catch(() => null);
+    });
+
+    const results = await Promise.all(promises);
+    return results.filter(Boolean);
+  }
+
+  async saveReceipt(tour, receipt) {
+    const dateStr = this._formatDate(new Date(receipt.date));
+
+    const fields = {
+      busID: { value: receipt.busID },
+      tourID: { value: receipt.tourID || tour.recordName },
+      date: { value: new Date(receipt.date).getTime() },
+      purchasedBy: { value: receipt.purchasedBy || '' },
+      purchasedAt: { value: new Date(receipt.purchasedAt || Date.now()).getTime() },
+      notes: { value: receipt.notes || '' },
+      itemsJSON: { value: JSON.stringify(receipt.items || []) }
+    };
+
+    const record = {
+      recordType: 'BusStockReceipt',
+      recordName: `receipt-${receipt.busID}-${dateStr}`,
+      fields
+    };
+
+    if (receipt.recordChangeTag) {
+      record.recordChangeTag = receipt.recordChangeTag;
+    }
+
+    const saved = await saveRecord(tour, record);
+    return this._parseReceipt(saved);
+  }
+
+  async purchaseItem(tour, bus, sheet, item, userRecordName) {
+    const dateStr = this._formatDate(new Date());
+    const receiptKey = `receipt-${bus.id}-${dateStr}`;
+
+    // Get or create today's receipt for this bus
+    let receipt = null;
+    try {
+      const existing = await lookupRecord(tour, receiptKey);
+      if (existing && !existing.serverErrorCode) {
+        receipt = this._parseReceipt(existing);
+      }
+    } catch (e) { /* no existing receipt */ }
+
+    if (!receipt) {
+      receipt = {
+        busID: bus.id,
+        tourID: tour.recordName,
+        date: new Date(),
+        items: [],
+        purchasedBy: userRecordName || null,
+        purchasedAt: new Date(),
+        notes: ''
+      };
+    }
+
+    // Append item to receipt
+    receipt.items.push({ ...item });
+    receipt.purchasedAt = new Date();
+    const savedReceipt = await this.saveReceipt(tour, receipt);
+
+    // Update sheet: default items reset to unchecked, non-default items removed
+    if (item.isFromDefaults) {
+      const idx = sheet.items.findIndex(i => i.id === item.id);
+      if (idx >= 0) sheet.items[idx].isChecked = false;
+    } else {
+      sheet.items = sheet.items.filter(i => i.id !== item.id);
+    }
+
+    const savedSheet = await this.saveSheet(tour, sheet);
+
+    return { receipt: savedReceipt, sheet: savedSheet };
+  }
+
   isSheetLocked(sheet) {
     if (!sheet) return false;
     if (sheet.isLocked) return true;
 
     if (sheet.lockSchedule) {
-      return this._isLockedBySchedule(sheet.lockSchedule, new Date(), sheet.date);
+      return this._isLockedBySchedule(sheet.lockSchedule, new Date());
     }
 
     return false;
   }
 
-  _isLockedBySchedule(schedule, now, sheetDate) {
+  _isLockedBySchedule(schedule, now) {
     if (!schedule || !schedule.lockTime) return false;
 
-    const sheetDay = new Date(sheetDate).getDay();
-    if (schedule.daysToLock && !schedule.daysToLock.includes(sheetDay)) {
+    const todayDay = now.getDay();
+    if (schedule.daysToLock && !schedule.daysToLock.includes(todayDay)) {
       return false;
     }
 
@@ -212,7 +316,6 @@ class BusStockService {
       recordChangeTag: record.recordChangeTag,
       busID: f.busID?.value || '',
       tourID: f.tourID?.value || '',
-      date: f.date?.value ? new Date(f.date.value) : null,
       items,
       notes: f.notes?.value || '',
       isLocked: (f.isLocked?.value || 0) === 1,
@@ -220,6 +323,27 @@ class BusStockService {
       lockedBy: f.lockedBy?.value || '',
       lockSchedule,
       lastUpdated: f.lastUpdated?.value ? new Date(f.lastUpdated.value) : null
+    };
+  }
+
+  _parseReceipt(record) {
+    const f = record.fields || {};
+
+    let items = [];
+    if (f.itemsJSON?.value) {
+      try { items = JSON.parse(f.itemsJSON.value); } catch (e) {}
+    }
+
+    return {
+      recordName: record.recordName,
+      recordChangeTag: record.recordChangeTag,
+      busID: f.busID?.value || '',
+      tourID: f.tourID?.value || '',
+      date: f.date?.value ? new Date(f.date.value) : null,
+      items,
+      purchasedBy: f.purchasedBy?.value || '',
+      purchasedAt: f.purchasedAt?.value ? new Date(f.purchasedAt.value) : null,
+      notes: f.notes?.value || ''
     };
   }
 

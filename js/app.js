@@ -78,7 +78,7 @@ router
   .on('#/event/:id', requireTour(async (params) => {
     await renderEventDetailView(params);
   }))
-  .on('#/busstock/:busId/:date', requireTour(async (params) => {
+  .on('#/busstock/:busId', requireTour(async (params) => {
     updateHeaderForTour();
     await renderBusStockSheetView(params);
   }))

@@ -1,4 +1,4 @@
-// Bus Stock View - Bus selector, date picker, stock items with add/edit
+// Bus Stock View - Bus selector, persistent stock list with purchase action
 
 import { tourService } from '../services/tour-service.js';
 import { busStockService } from '../services/busstock-service.js';
@@ -8,20 +8,19 @@ import { authService } from '../services/auth.js';
 import { showToast } from '../components/toast.js';
 
 const STORAGE_BUS_KEY = 'tourcal_busstock_busId';
-const STORAGE_DATE_KEY = 'tourcal_busstock_date';
 
 let _state = {
   buses: [],
   selectedBusId: sessionStorage.getItem(STORAGE_BUS_KEY) || null,
-  selectedDate: sessionStorage.getItem(STORAGE_DATE_KEY) || todayKey(),
   sheet: null,
   tour: null,
-  showAddForm: false
+  showAddForm: false,
+  receipts: [],
+  showReceipts: false
 };
 
 function _saveSelection() {
   if (_state.selectedBusId) sessionStorage.setItem(STORAGE_BUS_KEY, _state.selectedBusId);
-  if (_state.selectedDate) sessionStorage.setItem(STORAGE_DATE_KEY, _state.selectedDate);
 }
 
 export async function renderBusStockView() {
@@ -77,9 +76,8 @@ export async function renderBusStockView() {
   }
 }
 
-export async function renderBusStockSheetView({ busId, date }) {
+export async function renderBusStockSheetView({ busId }) {
   _state.selectedBusId = busId;
-  _state.selectedDate = date;
   _state.tour = tourService.activeTour;
   _saveSelection();
 
@@ -93,16 +91,20 @@ export async function renderBusStockSheetView({ busId, date }) {
 }
 
 async function _loadSheet() {
-  if (!_state.selectedBusId || !_state.selectedDate || !_state.tour) return;
+  if (!_state.selectedBusId || !_state.tour) return;
   _state.sheet = await busStockService.fetchSheet(
     _state.tour,
-    _state.selectedBusId,
-    new Date(_state.selectedDate + 'T12:00:00')
+    _state.selectedBusId
+  );
+  // Also load recent receipts for this bus
+  _state.receipts = await busStockService.fetchReceipts(
+    _state.tour,
+    _state.selectedBusId
   );
 }
 
 function _render(container) {
-  const { buses, selectedBusId, selectedDate, sheet, tour } = _state;
+  const { buses, selectedBusId, sheet, tour, receipts } = _state;
   const role = tour.role;
   const locked = busStockService.isSheetLocked(sheet);
   const editable = canEditBusStock(role, locked, tour.permissionOverrides);
@@ -115,6 +117,9 @@ function _render(container) {
     return item.createdBy === currentUser;
   }
 
+  const requestedCount = sheet ? sheet.items.filter(i => i.isChecked).length : 0;
+  const totalCount = sheet ? sheet.items.length : 0;
+
   let html = '<div class="busstock-view">';
 
   // Bus selector chips
@@ -125,21 +130,13 @@ function _render(container) {
   }
   html += '</div>';
 
-  // Date picker
-  html += `
-    <div class="busstock-date-picker">
-      <button class="btn btn-text btn-sm" id="date-prev">&#8249; Prev</button>
-      <input type="date" class="edit-time-input" id="date-input" value="${selectedDate}" style="width:auto;text-align:center">
-      <button class="btn btn-text btn-sm" id="date-next">Next &#8250;</button>
-    </div>
-  `;
-
   // Lock status
   if (sheet) {
     html += `<div style="text-align:center;margin-bottom:12px">
       <span class="badge ${locked ? 'badge-locked' : 'badge-unlocked'}">
         ${locked ? 'Locked' : 'Unlocked'}
       </span>
+      <span style="font-size:13px;color:var(--text-secondary);margin-left:8px;font-variant-numeric:tabular-nums">${requestedCount}/${totalCount} requested</span>
     </div>`;
   }
 
@@ -157,6 +154,9 @@ function _render(container) {
           const addedByText = item.createdBy === currentUser ? 'You' : item.createdBy.substring(0, 8) + '...';
           subtitleParts.push(`Added by ${addedByText}`);
         }
+        if (!item.isFromDefaults) {
+          subtitleParts.push('One-off');
+        }
         const subtitle = subtitleParts.join(' \u00b7 ');
         html += `
           <div class="check-item" data-item-id="${item.id}">
@@ -169,6 +169,7 @@ function _render(container) {
               ${editable ? `<button class="qty-btn" data-action="dec" data-item-id="${item.id}">&minus;</button>` : ''}
               <span class="qty-value">${item.quantity || 0}</span>
               ${editable ? `<button class="qty-btn" data-action="inc" data-item-id="${item.id}">+</button>` : ''}
+              ${item.isChecked ? `<button class="qty-btn" data-action="purchase" data-item-id="${item.id}" style="color:var(--system-green,#34c759);margin-left:4px" title="Mark purchased">&#128722;</button>` : ''}
               ${editable && canDeleteItem(item) ? `<button class="qty-btn" data-action="delete" data-item-id="${item.id}" style="color:var(--system-red);margin-left:4px" title="Remove item">\u2715</button>` : ''}
             </div>
           </div>
@@ -181,22 +182,31 @@ function _render(container) {
     if (sheet.notes) {
       html += `<div class="daysheet-notes" style="margin-top:12px">${_esc(sheet.notes)}</div>`;
     }
+
+    // Clear all requests
+    if (requestedCount > 0) {
+      html += `
+        <button class="btn btn-text" id="clear-requests-btn" style="width:100%;margin-top:16px;color:var(--text-secondary)">
+          Clear All Requests
+        </button>
+      `;
+    }
   } else if (sheet) {
     html += `
       <div class="empty-state" style="padding:32px">
         <div class="empty-state-icon">&#128230;</div>
         <h2 class="empty-state-title">No Items</h2>
-        <p class="empty-state-text">Add items to this stock sheet.</p>
+        <p class="empty-state-text">Add items to this stock list.</p>
       </div>
     `;
   } else {
     html += `
       <div class="empty-state" style="padding:32px">
         <div class="empty-state-icon">&#128203;</div>
-        <h2 class="empty-state-title">No Sheet</h2>
-        <p class="empty-state-text">No stock sheet for this date yet.</p>
+        <h2 class="empty-state-title">No Stock List</h2>
+        <p class="empty-state-text">No stock list for this bus yet.</p>
         ${editable ? `
-          <button class="btn btn-primary" id="create-sheet-btn" style="margin-top:12px">Create Sheet</button>
+          <button class="btn btn-primary" id="create-sheet-btn" style="margin-top:12px">Create Stock List</button>
           <button class="btn btn-text" id="create-from-defaults-btn" style="margin-top:8px">Load from Defaults</button>
         ` : ''}
       </div>
@@ -225,12 +235,48 @@ function _render(container) {
           </div>
         </div>
       `;
-    } else {
+    } else if (sheet) {
       html += `
         <button class="btn btn-text" id="show-add-form" style="width:100%;margin-top:16px;padding:12px;border:1px dashed var(--separator);border-radius:10px;color:var(--system-blue)">
           + Add Item
         </button>
       `;
+    }
+  }
+
+  // Recent Receipts section
+  if (receipts.length > 0) {
+    html += `
+      <div style="margin-top:24px">
+        <button class="btn btn-text" id="toggle-receipts" style="width:100%;display:flex;align-items:center;justify-content:space-between;padding:10px 0;color:var(--text-secondary);font-weight:600">
+          <span>&#128722; Purchase History (${receipts.length})</span>
+          <span style="font-size:12px">${_state.showReceipts ? '&#9650;' : '&#9660;'}</span>
+        </button>
+      </div>
+    `;
+
+    if (_state.showReceipts) {
+      html += '<div class="card">';
+      for (let i = 0; i < receipts.length; i++) {
+        const r = receipts[i];
+        const dateStr = r.date ? new Date(r.date).toLocaleDateString() : 'Unknown';
+        const timeStr = r.purchasedAt ? new Date(r.purchasedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
+        html += `
+          <div style="padding:10px 16px${i < receipts.length - 1 ? ';border-bottom:1px solid var(--separator)' : ''}">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
+              <span style="font-weight:500">${dateStr}</span>
+              <span style="font-size:13px;color:var(--text-secondary)">${timeStr}</span>
+            </div>
+            <div style="font-size:13px;color:var(--text-secondary)">
+              ${r.items.length} items purchased
+            </div>
+            <div style="margin-top:6px;font-size:13px;color:var(--text-tertiary)">
+              ${r.items.slice(0, 3).map(it => _esc(it.name)).join(', ')}${r.items.length > 3 ? `, +${r.items.length - 3} more` : ''}
+            </div>
+          </div>
+        `;
+      }
+      html += '</div>';
     }
   }
 
@@ -247,45 +293,14 @@ function _bindEvents(container) {
     chip.addEventListener('click', async () => {
       _state.selectedBusId = chip.dataset.busId;
       _state.showAddForm = false;
+      _state.showReceipts = false;
       _saveSelection();
       await _loadSheet();
       _render(container);
     });
   });
 
-  // Date navigation
-  const dateInput = container.querySelector('#date-input');
-  if (dateInput) {
-    dateInput.addEventListener('change', async () => {
-      _state.selectedDate = dateInput.value;
-      _state.showAddForm = false;
-      _saveSelection();
-      await _loadSheet();
-      _render(container);
-    });
-  }
-
-  container.querySelector('#date-prev')?.addEventListener('click', async () => {
-    const d = new Date(_state.selectedDate + 'T12:00:00');
-    d.setDate(d.getDate() - 1);
-    _state.selectedDate = formatDateISO(d);
-    _state.showAddForm = false;
-    _saveSelection();
-    await _loadSheet();
-    _render(container);
-  });
-
-  container.querySelector('#date-next')?.addEventListener('click', async () => {
-    const d = new Date(_state.selectedDate + 'T12:00:00');
-    d.setDate(d.getDate() + 1);
-    _state.selectedDate = formatDateISO(d);
-    _state.showAddForm = false;
-    _saveSelection();
-    await _loadSheet();
-    _render(container);
-  });
-
-  // Item interactions (toggle, inc, dec)
+  // Item interactions (toggle, inc, dec, delete, purchase)
   container.querySelectorAll('[data-action]').forEach(el => {
     el.addEventListener('click', async (e) => {
       e.stopPropagation();
@@ -295,6 +310,27 @@ function _bindEvents(container) {
       if (!_state.sheet) return;
       const item = _state.sheet.items.find(i => i.id === itemId);
       if (!item) return;
+
+      // Per-item purchase
+      if (action === 'purchase') {
+        if (!confirm(`Mark "${item.name}" as purchased?`)) return;
+        try {
+          const bus = _state.buses.find(b => b.id === _state.selectedBusId);
+          const result = await busStockService.purchaseItem(
+            _state.tour, bus, _state.sheet, item, authService.userRecordName
+          );
+          if (result) {
+            _state.sheet = result.sheet;
+            _state.receipts = await busStockService.fetchReceipts(_state.tour, _state.selectedBusId);
+            showToast(`Purchased "${item.name}"`);
+            _render(container);
+          }
+        } catch (err) {
+          showToast('Failed to mark purchased', 'error');
+          console.error('Purchase error:', err);
+        }
+        return;
+      }
 
       if (action === 'toggle') {
         item.isChecked = !item.isChecked;
@@ -318,6 +354,31 @@ function _bindEvents(container) {
     });
   });
 
+  // Clear All Requests
+  container.querySelector('#clear-requests-btn')?.addEventListener('click', async () => {
+    if (!confirm('Clear all requests? Items will remain on the list but none will be marked for purchase.')) return;
+
+    for (const item of _state.sheet.items) {
+      item.isChecked = false;
+    }
+
+    try {
+      const saved = await busStockService.saveSheet(_state.tour, _state.sheet);
+      _state.sheet.recordChangeTag = saved.recordChangeTag;
+      _render(container);
+      showToast('All requests cleared');
+    } catch (err) {
+      showToast('Failed to clear requests', 'error');
+      console.error('Clear error:', err);
+    }
+  });
+
+  // Toggle receipts
+  container.querySelector('#toggle-receipts')?.addEventListener('click', () => {
+    _state.showReceipts = !_state.showReceipts;
+    _render(container);
+  });
+
   // Create empty sheet
   container.querySelector('#create-sheet-btn')?.addEventListener('click', async () => {
     await _createSheet([]);
@@ -334,7 +395,7 @@ function _bindEvents(container) {
         brand: item.brand || '',
         size: item.size || '',
         quantity: item.defaultQuantity || item.quantity || 1,
-        isChecked: item.enabledByDefault || false,
+        isChecked: false,
         isFromDefaults: true,
         order: i,
         createdBy: authService.userRecordName || null
@@ -384,7 +445,6 @@ async function _createSheet(items) {
   const sheet = {
     busID: _state.selectedBusId,
     tourID: _state.tour.recordName,
-    date: _state.selectedDate + 'T12:00:00',
     items,
     notes: '',
     isLocked: false
@@ -394,7 +454,7 @@ async function _createSheet(items) {
     const saved = await busStockService.saveSheet(_state.tour, sheet);
     _state.sheet = saved;
   } catch (err) {
-    showToast('Failed to create sheet', 'error');
+    showToast('Failed to create stock list', 'error');
     console.error('Create sheet error:', err);
   }
 }
@@ -424,7 +484,7 @@ async function _addItem(container) {
     brand,
     size,
     quantity,
-    isChecked: false,
+    isChecked: true,  // new items default to requested
     isFromDefaults: false,
     order: _state.sheet ? _state.sheet.items.length : 0,
     createdBy: authService.userRecordName || null

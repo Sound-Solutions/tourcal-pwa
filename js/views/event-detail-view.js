@@ -57,14 +57,16 @@ export async function renderEventDetailView({ id }) {
       busStockService.fetchBuses(tour)
     ]);
 
-    // Fetch sheets for each bus on the event date
+    // Fetch persistent sheets for each bus + receipts for event date
     const eventDate = new Date(event.startDate);
     const busSheets = [];
+    let busReceipts = [];
     if (buses.length > 0) {
       const sheetPromises = buses.map(bus =>
-        busStockService.fetchSheet(tour, bus.id, eventDate).then(sheet => ({ bus, sheet }))
+        busStockService.fetchSheet(tour, bus.id).then(sheet => ({ bus, sheet }))
       );
       busSheets.push(...await Promise.all(sheetPromises));
+      busReceipts = await busStockService.fetchAllReceiptsForDate(tour, buses, eventDate);
     }
 
     // Find the next event with a different city for travel card
@@ -84,7 +86,7 @@ export async function renderEventDetailView({ id }) {
       }
     }
 
-    _render(content, event, daysheet, setlist, venueNote, tour, busSheets, nextEvent);
+    _render(content, event, daysheet, setlist, venueNote, tour, busSheets, nextEvent, busReceipts);
   } catch (e) {
     console.error('Error loading event detail:', e);
     content.innerHTML = `
@@ -98,7 +100,7 @@ export async function renderEventDetailView({ id }) {
   }
 }
 
-function _render(container, event, daysheet, setlist, venueNote, tour, busSheets = [], nextEvent = null) {
+function _render(container, event, daysheet, setlist, venueNote, tour, busSheets = [], nextEvent = null, busReceipts = []) {
   const tz = event.timeZoneIdentifier;
   const role = tour.role;
 
@@ -237,20 +239,19 @@ function _render(container, event, daysheet, setlist, venueNote, tour, busSheets
   }
 
   // Bus Stock section
-  const eventDateISO = formatDateISO(new Date(event.startDate));
   html += '<div class="section-subheader">BUS STOCK</div>';
   if (busSheets.length > 0) {
     html += '<div class="card">';
     for (let i = 0; i < busSheets.length; i++) {
       const { bus, sheet } = busSheets[i];
-      const checked = sheet ? sheet.items.filter(it => it.isChecked).length : 0;
+      const requested = sheet ? sheet.items.filter(it => it.isChecked).length : 0;
       const total = sheet ? sheet.items.length : 0;
       const locked = sheet && busStockService.isSheetLocked(sheet);
       html += `
-        <a class="busstock-link" href="#/busstock/${bus.id}/${eventDateISO}" style="display:flex;align-items:center;padding:10px 16px;text-decoration:none;color:inherit">
+        <a class="busstock-link" href="#/busstock/${bus.id}" style="display:flex;align-items:center;padding:10px 16px;text-decoration:none;color:inherit">
           <span style="flex:1;font-size:15px">${_esc(bus.name)}</span>
           ${locked ? '<span style="color:var(--system-orange);font-size:13px;margin-right:8px">&#128274;</span>' : ''}
-          <span style="font-size:13px;color:var(--text-secondary);font-variant-numeric:tabular-nums">${checked}/${total}</span>
+          <span style="font-size:13px;color:var(--text-secondary);font-variant-numeric:tabular-nums">${requested}/${total}</span>
           <span style="margin-left:8px;color:var(--text-tertiary);font-size:12px">&#8250;</span>
         </a>
       `;
@@ -261,6 +262,31 @@ function _render(container, event, daysheet, setlist, venueNote, tour, busSheets
     html += '</div>';
   } else {
     html += '<div class="card"><div class="card-body empty-section-text">No bus stock yet</div></div>';
+  }
+
+  // Purchased Today section (receipts for event date)
+  if (busReceipts.length > 0) {
+    html += '<div class="section-subheader">PURCHASED TODAY</div>';
+    html += '<div class="card">';
+    for (let i = 0; i < busReceipts.length; i++) {
+      const { bus, receipt } = busReceipts[i];
+      const timeStr = receipt.purchasedAt ? new Date(receipt.purchasedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
+      html += `
+        <div style="padding:10px 16px${i < busReceipts.length - 1 ? ';border-bottom:1px solid var(--separator)' : ''}">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
+            <span style="font-weight:500;font-size:15px">${_esc(bus.name)}</span>
+            <span style="font-size:13px;color:var(--text-secondary)">${timeStr}</span>
+          </div>
+          <div style="font-size:13px;color:var(--text-secondary)">
+            ${receipt.items.length} items purchased
+          </div>
+          <div style="margin-top:4px;font-size:13px;color:var(--text-tertiary)">
+            ${receipt.items.slice(0, 3).map(it => _esc(it.name || it.displayName || '')).join(', ')}${receipt.items.length > 3 ? `, +${receipt.items.length - 3} more` : ''}
+          </div>
+        </div>
+      `;
+    }
+    html += '</div>';
   }
 
   // Event notes
