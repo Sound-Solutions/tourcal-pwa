@@ -12,7 +12,8 @@ const PERMISSIONS = {
     canViewVenueNotes: true,
     canViewTourSheets: true,
     canPostAnnouncements: true,
-    canLockBusStock: true
+    canLockBusStock: true,
+    canPurchaseBusStock: true
   },
   Admin: {
     canEditEvents: true,
@@ -25,7 +26,8 @@ const PERMISSIONS = {
     canViewVenueNotes: true,
     canViewTourSheets: true,
     canPostAnnouncements: true,
-    canLockBusStock: true
+    canLockBusStock: true,
+    canPurchaseBusStock: true
   },
   'Crew Chief': {
     canEditEvents: false,
@@ -38,7 +40,8 @@ const PERMISSIONS = {
     canViewVenueNotes: true,
     canViewTourSheets: true,
     canPostAnnouncements: true,
-    canLockBusStock: false
+    canLockBusStock: false,
+    canPurchaseBusStock: false
   },
   Crew: {
     canEditEvents: false,
@@ -51,7 +54,8 @@ const PERMISSIONS = {
     canViewVenueNotes: true,
     canViewTourSheets: true,
     canPostAnnouncements: false,
-    canLockBusStock: false
+    canLockBusStock: false,
+    canPurchaseBusStock: false
   },
   Artist: {
     canEditEvents: false,
@@ -64,7 +68,8 @@ const PERMISSIONS = {
     canViewVenueNotes: false,
     canViewTourSheets: false,
     canPostAnnouncements: false,
-    canLockBusStock: false
+    canLockBusStock: false,
+    canPurchaseBusStock: false
   }
 };
 
@@ -120,6 +125,10 @@ export function canPostAnnouncements(role, permissionOverrides) {
 
 export function canLockBusStock(role, permissionOverrides) {
   return resolvePermissions(role, permissionOverrides).canLockBusStock;
+}
+
+export function canPurchaseBusStock(role, permissionOverrides) {
+  return resolvePermissions(role, permissionOverrides).canPurchaseBusStock;
 }
 
 export function isOwnerOrAdmin(role) {

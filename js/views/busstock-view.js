@@ -3,7 +3,7 @@
 import { tourService } from '../services/tour-service.js';
 import { busStockService } from '../services/busstock-service.js';
 import { formatDateISO, formatDateShort, todayKey } from '../models/formatters.js';
-import { canEditBusStock, isOwnerOrAdmin } from '../models/permissions.js';
+import { canEditBusStock, isOwnerOrAdmin, canPurchaseBusStock } from '../models/permissions.js';
 import { authService } from '../services/auth.js';
 import { showToast } from '../components/toast.js';
 
@@ -109,6 +109,7 @@ function _render(container) {
   const locked = busStockService.isSheetLocked(sheet);
   const editable = canEditBusStock(role, locked, tour.permissionOverrides);
   const isAdmin = isOwnerOrAdmin(role);
+  const canPurchase = canPurchaseBusStock(role, tour.permissionOverrides);
   const currentUser = authService.userRecordName;
 
   function canDeleteItem(item) {
@@ -169,7 +170,7 @@ function _render(container) {
               ${editable ? `<button class="qty-btn" data-action="dec" data-item-id="${item.id}">&minus;</button>` : ''}
               <span class="qty-value">${item.quantity || 0}</span>
               ${editable ? `<button class="qty-btn" data-action="inc" data-item-id="${item.id}">+</button>` : ''}
-              ${item.isChecked ? `<button class="qty-btn" data-action="purchase" data-item-id="${item.id}" style="color:var(--system-green,#34c759);margin-left:4px" title="Mark purchased">&#128722;</button>` : ''}
+              ${item.isChecked && canPurchase ? `<button class="qty-btn" data-action="purchase" data-item-id="${item.id}" style="color:var(--system-green,#34c759);margin-left:4px" title="Mark purchased">&#128722;</button>` : ''}
               ${editable && canDeleteItem(item) ? `<button class="qty-btn" data-action="delete" data-item-id="${item.id}" style="color:var(--system-red);margin-left:4px" title="Remove item">\u2715</button>` : ''}
             </div>
           </div>
