@@ -113,7 +113,7 @@ function _render(container) {
 
   function canDeleteItem(item) {
     if (isAdmin) return true;
-    if (!item.createdBy) return true;  // legacy items (no createdBy) - allow delete
+    if (!item.createdBy) return false;  // no creator info — only admin can delete
     return item.createdBy === currentUser;
   }
 
