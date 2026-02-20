@@ -6,7 +6,14 @@ import { travelService } from '../services/travel-service.js';
 import { cache } from '../services/cache.js';
 import { formatDateCompact } from '../models/formatters.js';
 
+let _leafletMap = null;
+
 export async function renderRouteView() {
+  // Clean up previous map instance
+  if (_leafletMap) {
+    _leafletMap.remove();
+    _leafletMap = null;
+  }
   const content = document.getElementById('app-content');
   const tour = tourService.activeTour;
 
@@ -68,7 +75,7 @@ function _renderMap(stops, routePath, tour) {
   const tourColor = tour.colorHex || '#007AFF';
 
   // Initialize Leaflet map
-  const map = L.map('route-map', {
+  _leafletMap = L.map('route-map', {
     zoomControl: false,
     attributionControl: false
   });
@@ -76,15 +83,15 @@ function _renderMap(stops, routePath, tour) {
   // Add OpenStreetMap tiles
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
     maxZoom: 18
-  }).addTo(map);
+  }).addTo(_leafletMap);
 
   // Zoom control top-right
-  L.control.zoom({ position: 'topright' }).addTo(map);
+  L.control.zoom({ position: 'topright' }).addTo(_leafletMap);
 
   // Attribution bottom-right
   L.control.attribution({ position: 'bottomright', prefix: false })
     .addAttribution('&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a>')
-    .addTo(map);
+    .addTo(_leafletMap);
 
   // Draw route polyline
   if (routePath.length > 1) {
@@ -93,7 +100,7 @@ function _renderMap(stops, routePath, tour) {
       color: tourColor,
       weight: 2.5,
       opacity: 0.6
-    }).addTo(map);
+    }).addTo(_leafletMap);
   }
 
   // Add stop markers
@@ -113,7 +120,7 @@ function _renderMap(stops, routePath, tour) {
       iconAnchor: [size[0] / 2, size[1] / 2]
     });
 
-    const marker = L.marker(latlng, { icon }).addTo(map);
+    const marker = L.marker(latlng, { icon }).addTo(_leafletMap);
 
     // Build popup/overlay content
     const overlay = document.getElementById('route-overlay');
@@ -141,11 +148,11 @@ function _renderMap(stops, routePath, tour) {
 
   // Fit map to bounds
   if (bounds.length > 0) {
-    map.fitBounds(bounds, { padding: [40, 40] });
+    _leafletMap.fitBounds(bounds, { padding: [40, 40] });
   }
 
   // Close overlay on map click
-  map.on('click', () => {
+  _leafletMap.on('click', () => {
     document.getElementById('route-overlay').style.display = 'none';
   });
 }

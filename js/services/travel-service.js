@@ -1,22 +1,10 @@
-// Travel Service - Geocoding (Nominatim) + Routing (MapKit JS Directions)
+// Travel Service - Geocoding + Routing via MapKit JS (matches iOS MKDirections/CLGeocoder)
 
 import { cache } from './cache.js';
 
-const NOMINATIM_BASE = 'https://nominatim.openstreetmap.org/search';
 const CACHE_TTL = 7 * 24 * 3600000; // 7 days
 
 const MAPKIT_TOKEN = 'eyJhbGciOiJFUzI1NiIsImtpZCI6Ilg4SkNNNUE2VDMiLCJ0eXAiOiJKV1QifQ.eyJpc3MiOiJNMjJYWDJDU0FZIiwiaWF0IjoxNzcxNTQ1NTk3LCJleHAiOjE4MDMwODE1OTcsIm9yaWdpbiI6Imh0dHBzOi8vc291bmQtc29sdXRpb25zLmdpdGh1Yi5pbyJ9.9HzCGXiTGAbRWPZU_fSiIUUkGCzWk3jhBPUpfsB1ZCCwzI4uWdRo2JZHbJ8cF7ww9_Ac_M5CbW5GFlWElDIapw';
-
-// 2-letter codes that overlap with US state abbreviations → country names
-const COUNTRY_CODE_MAP = {
-  AL: 'Albania',  AR: 'Argentina', CO: 'Colombia',
-  DE: 'Germany',  GA: 'Georgia',   ID: 'Indonesia',
-  IL: 'Israel',   IN: 'India',     LA: 'Laos',
-  MA: 'Morocco',  MD: 'Moldova',   ME: 'Montenegro',
-  MN: 'Mongolia', MO: 'Monaco',    MT: 'Malta',
-  NC: 'New Caledonia', NE: 'Netherlands',
-  PA: 'Panama',   SC: 'Seychelles', VA: 'Vatican City',
-};
 
 let _mapkitReady = false;
 let _mapkitInitPromise = null;
@@ -41,27 +29,43 @@ function ensureMapKit() {
 }
 
 class TravelService {
-  constructor() {
-    this._geocodeQueue = Promise.resolve();
-  }
-
   /**
    * Geocode a city string to { lat, lon }.
-   * Uses Nominatim (1 req/sec rate limit enforced via queue).
+   * Uses MapKit JS Geocoder (same engine as CLGeocoder on iOS).
    */
   async geocode(city) {
     if (!city) return null;
-    const key = `geo:${city.toLowerCase().trim()}`;
+    const key = `geo:mk:${city.toLowerCase().trim()}`;
 
     const cached = await cache.get(key);
     if (cached) return cached;
 
-    // Queue requests to respect Nominatim 1 req/sec
-    const result = await this._enqueueGeocode(city);
-    if (result) {
-      await cache.put(key, result, CACHE_TTL);
+    try {
+      await ensureMapKit();
+
+      const geocoder = new mapkit.Geocoder();
+      const result = await new Promise((resolve) => {
+        geocoder.lookup(city, (error, data) => {
+          if (error || !data?.results?.[0]) {
+            resolve(null);
+            return;
+          }
+          const place = data.results[0];
+          resolve({
+            lat: place.coordinate.latitude,
+            lon: place.coordinate.longitude
+          });
+        });
+      });
+
+      if (result) {
+        await cache.put(key, result, CACHE_TTL);
+      }
+      return result;
+    } catch (e) {
+      console.warn(`[TravelService] MapKit geocode failed for '${city}':`, e);
+      return null;
     }
-    return result;
   }
 
   /**
@@ -175,10 +179,14 @@ class TravelService {
       }
     }
 
-    // Geocode each group
+    // Geocode each group (MapKit has no strict rate limit like Nominatim)
+    const geocodePromises = groups.map(g => this.geocode(g.city));
+    const coords = await Promise.all(geocodePromises);
+
     const unmerged = [];
-    for (const group of groups) {
-      const coord = await this.geocode(group.city);
+    for (let i = 0; i < groups.length; i++) {
+      const group = groups[i];
+      const coord = coords[i];
       if (coord) {
         const hasMultipleDays = group.lastDate && group.firstEvent.startDate &&
           new Date(group.lastDate).toDateString() !== new Date(group.firstEvent.startDate).toDateString();
@@ -226,51 +234,6 @@ class TravelService {
 
   // --- Private helpers ---
 
-  _enqueueGeocode(city) {
-    this._geocodeQueue = this._geocodeQueue.then(async () => {
-      await this._sleep(1100); // Nominatim rate limit
-      let result = await this._doGeocode(city);
-
-      // If failed and ends with a 2-letter code that overlaps with a US state,
-      // retry with the full country name (e.g. "LANDGRAAF, NE" → "LANDGRAAF, Netherlands")
-      if (!result) {
-        const parts = city.split(',').map(s => s.trim());
-        if (parts.length >= 2) {
-          const suffix = parts[parts.length - 1];
-          if (suffix.length === 2) {
-            const countryName = COUNTRY_CODE_MAP[suffix.toUpperCase()];
-            if (countryName) {
-              const cityPart = parts.slice(0, -1).join(', ');
-              const expanded = `${cityPart}, ${countryName}`;
-              console.log(`[TravelService] Retrying with country name: '${expanded}'`);
-              await this._sleep(1100);
-              result = await this._doGeocode(expanded);
-            }
-          }
-        }
-      }
-
-      return result;
-    });
-    return this._geocodeQueue;
-  }
-
-  async _doGeocode(city) {
-    try {
-      const url = `${NOMINATIM_BASE}?q=${encodeURIComponent(city)}&format=json&limit=1`;
-      const res = await fetch(url, {
-        headers: { 'User-Agent': 'TourCal-PWA/1.0' }
-      });
-      const data = await res.json();
-      if (data?.[0]) {
-        return { lat: parseFloat(data[0].lat), lon: parseFloat(data[0].lon) };
-      }
-    } catch (e) {
-      console.warn(`[TravelService] Geocode failed for '${city}':`, e);
-    }
-    return null;
-  }
-
   _haversine(a, b) {
     const R = 6371000; // Earth radius in meters
     const toRad = d => d * Math.PI / 180;
@@ -293,10 +256,6 @@ class TravelService {
     const mins = Math.floor((seconds % 3600) / 60);
     if (hours > 0) return `${hours}h ${mins}m`;
     return `${mins}m`;
-  }
-
-  _sleep(ms) {
-    return new Promise(r => setTimeout(r, ms));
   }
 }
 
