@@ -323,6 +323,7 @@ function _bindEvents(container) {
           if (result) {
             _state.sheet = result.sheet;
             _state.receipts = await busStockService.fetchReceipts(_state.tour, _state.selectedBusId);
+            _state.showReceipts = true;  // Auto-expand receipts so user sees the purchase
             showToast(`Purchased "${item.name}"`);
             _render(container);
           }

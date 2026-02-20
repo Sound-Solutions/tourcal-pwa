@@ -144,14 +144,23 @@ export async function saveRecord(tour, record) {
 
   const data = await res.json();
 
-  // Handle server record changed (conflict) - retry with forceUpdate
-  if (data.records?.[0]?.serverErrorCode === 'CONFLICT') {
-    console.warn('[CloudKitAPI] Conflict on save, retrying with forceUpdate');
+  // Handle conflict or record-already-exists - retry with forceUpdate
+  const errCode = data.records?.[0]?.serverErrorCode;
+  if (errCode === 'CONFLICT' || errCode === 'RECORD_ALREADY_EXISTS') {
+    console.warn(`[CloudKitAPI] ${errCode} on save, retrying with forceUpdate`);
     op.operationType = 'forceUpdate';
     // Get the server record's change tag
     const serverTag = data.records[0]?.serverRecord?.recordChangeTag;
     if (serverTag) {
       op.record.recordChangeTag = serverTag;
+    } else if (errCode === 'RECORD_ALREADY_EXISTS') {
+      // Fetch the existing record to get its change tag
+      try {
+        const existing = await lookupRecord(tour, record.recordName);
+        if (existing?.recordChangeTag) {
+          op.record.recordChangeTag = existing.recordChangeTag;
+        }
+      } catch (e) { /* proceed without tag */ }
     }
     const retryRes = await authService.apiFetch(`/${db}/records/modify`, {
       method: 'POST',

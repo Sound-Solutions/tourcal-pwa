@@ -231,20 +231,24 @@ class BusStockService {
       };
     }
 
-    // Append item to receipt
+    // Append item snapshot to receipt
     receipt.items.push({ ...item });
     receipt.purchasedAt = new Date();
     const savedReceipt = await this.saveReceipt(tour, receipt);
 
-    // Update sheet: default items reset to unchecked, non-default items removed
+    // Clone sheet items before mutating (don't corrupt _state.sheet on failure)
+    const updatedItems = sheet.items.map(i => ({ ...i }));
     if (item.isFromDefaults) {
-      const idx = sheet.items.findIndex(i => i.id === item.id);
-      if (idx >= 0) sheet.items[idx].isChecked = false;
+      const idx = updatedItems.findIndex(i => i.id === item.id);
+      if (idx >= 0) updatedItems[idx].isChecked = false;
     } else {
-      sheet.items = sheet.items.filter(i => i.id !== item.id);
+      const filtered = updatedItems.filter(i => i.id !== item.id);
+      updatedItems.length = 0;
+      updatedItems.push(...filtered);
     }
 
-    const savedSheet = await this.saveSheet(tour, sheet);
+    const sheetCopy = { ...sheet, items: updatedItems };
+    const savedSheet = await this.saveSheet(tour, sheetCopy);
 
     return { receipt: savedReceipt, sheet: savedSheet };
   }
