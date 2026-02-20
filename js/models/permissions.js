@@ -13,7 +13,8 @@ const PERMISSIONS = {
     canViewTourSheets: true,
     canPostAnnouncements: true,
     canLockBusStock: true,
-    canPurchaseBusStock: true
+    canPurchaseBusStock: true,
+    viewTodayOnly: false
   },
   Admin: {
     canEditEvents: true,
@@ -27,7 +28,8 @@ const PERMISSIONS = {
     canViewTourSheets: true,
     canPostAnnouncements: true,
     canLockBusStock: true,
-    canPurchaseBusStock: true
+    canPurchaseBusStock: true,
+    viewTodayOnly: false
   },
   'Crew Chief': {
     canEditEvents: false,
@@ -41,7 +43,8 @@ const PERMISSIONS = {
     canViewTourSheets: true,
     canPostAnnouncements: true,
     canLockBusStock: false,
-    canPurchaseBusStock: false
+    canPurchaseBusStock: false,
+    viewTodayOnly: false
   },
   Crew: {
     canEditEvents: false,
@@ -55,7 +58,8 @@ const PERMISSIONS = {
     canViewTourSheets: true,
     canPostAnnouncements: false,
     canLockBusStock: false,
-    canPurchaseBusStock: false
+    canPurchaseBusStock: false,
+    viewTodayOnly: false
   },
   Artist: {
     canEditEvents: false,
@@ -69,7 +73,23 @@ const PERMISSIONS = {
     canViewTourSheets: false,
     canPostAnnouncements: false,
     canLockBusStock: false,
-    canPurchaseBusStock: false
+    canPurchaseBusStock: false,
+    viewTodayOnly: false
+  },
+  Runner: {
+    canEditEvents: false,
+    canEditDaySheets: false,
+    canEditSetlists: false,
+    canEditBusStock: false,
+    canEditVenueNotes: false,
+    canEditCrew: false,
+    canShareTour: false,
+    canViewVenueNotes: false,
+    canViewTourSheets: true,
+    canPostAnnouncements: false,
+    canLockBusStock: false,
+    canPurchaseBusStock: true,
+    viewTodayOnly: true
   }
 };
 
@@ -129,6 +149,10 @@ export function canLockBusStock(role, permissionOverrides) {
 
 export function canPurchaseBusStock(role, permissionOverrides) {
   return resolvePermissions(role, permissionOverrides).canPurchaseBusStock;
+}
+
+export function hasViewTodayOnly(role, permissionOverrides) {
+  return resolvePermissions(role, permissionOverrides).viewTodayOnly;
 }
 
 export function isOwnerOrAdmin(role) {

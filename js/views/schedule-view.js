@@ -5,6 +5,7 @@ import { eventService } from '../services/event-service.js';
 import { authService } from '../services/auth.js';
 import { formatDateShort, formatDateLong, formatTime } from '../models/formatters.js';
 import { setupPullToRefresh } from '../components/pull-to-refresh.js';
+import { hasViewTodayOnly } from '../models/permissions.js';
 
 export async function renderScheduleView() {
   const content = document.getElementById('app-content');
@@ -16,10 +17,11 @@ export async function renderScheduleView() {
   }
 
   // Set header with route button and sign-out button
+  const todayOnly = hasViewTodayOnly(tour.role, tour.permissionOverrides);
   document.getElementById('header-actions').innerHTML = `
-    <a href="#/route" class="btn btn-sm btn-secondary route-btn" style="margin-right:8px">
+    ${!todayOnly ? `<a href="#/route" class="btn btn-sm btn-secondary route-btn" style="margin-right:8px">
       <span class="route-btn-icon">&#128506;</span> Route
-    </a>
+    </a>` : ''}
     <button class="sign-out-btn" id="schedule-sign-out">Sign Out</button>
   `;
   document.getElementById('schedule-sign-out')?.addEventListener('click', async () => {
@@ -54,16 +56,27 @@ export async function renderScheduleView() {
 function _render(container, events, tour) {
   // Filter artist-only events based on role
   const role = tour.role;
-  const filtered = role === 'Artist'
+  let filtered = role === 'Artist'
     ? events
     : events.filter(e => !e.isArtistOnly);
+
+  // Filter to today only if viewTodayOnly permission is set
+  const todayOnly = hasViewTodayOnly(role, tour.permissionOverrides);
+  if (todayOnly) {
+    const today = new Date().toISOString().split('T')[0];
+    filtered = filtered.filter(e => {
+      if (!e.startDate) return false;
+      const eventDate = new Date(e.startDate).toISOString().split('T')[0];
+      return eventDate === today;
+    });
+  }
 
   if (filtered.length === 0) {
     container.innerHTML = `
       <div class="empty-state">
         <div class="empty-state-icon">&#128197;</div>
-        <h2 class="empty-state-title">No Events</h2>
-        <p class="empty-state-text">No events scheduled yet for this tour.</p>
+        <h2 class="empty-state-title">No Events${todayOnly ? ' Today' : ''}</h2>
+        <p class="empty-state-text">${todayOnly ? 'No events scheduled for today.' : 'No events scheduled yet for this tour.'}</p>
       </div>
     `;
     return;
