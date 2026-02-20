@@ -310,6 +310,9 @@ class TourService {
       daySheetDefaults: f.daySheetDefaults?.value
         ? JSON.parse(f.daySheetDefaults.value)
         : null,
+      disabledModules: f.disabledModules?.value
+        ? JSON.parse(f.disabledModules.value)
+        : [],
       role: isShared ? 'Crew' : 'Owner',
       _record: record
     };

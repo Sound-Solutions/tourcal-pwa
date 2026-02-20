@@ -100,6 +100,10 @@ export async function renderEventDetailView({ id }) {
   }
 }
 
+function _isModuleEnabled(tour, moduleId) {
+  return !(tour.disabledModules || []).includes(moduleId);
+}
+
 function _render(container, event, daysheet, setlist, venueNote, tour, busSheets = [], nextEvent = null, busReceipts = []) {
   const tz = event.timeZoneIdentifier;
   const role = tour.role;
@@ -160,74 +164,78 @@ function _render(container, event, daysheet, setlist, venueNote, tour, busSheets
   }
 
   // Day Sheet section
-  html += '<div class="section-subheader">DAY SHEET</div>';
-  if (daysheet) {
-    html += '<div class="card">';
-    const items = daySheetService.getScheduleItems(daysheet);
-    if (items.length > 0) {
-      for (const item of items) {
-        html += `
-          <div class="schedule-item" style="padding: 10px 16px;">
-            <div class="schedule-item-time">
-              <span class="time-value">${formatTime(item.startTime, tz)}</span>
+  if (_isModuleEnabled(tour, 'daysheet')) {
+    html += '<div class="section-subheader">DAY SHEET</div>';
+    if (daysheet) {
+      html += '<div class="card">';
+      const items = daySheetService.getScheduleItems(daysheet);
+      if (items.length > 0) {
+        for (const item of items) {
+          html += `
+            <div class="schedule-item" style="padding: 10px 16px;">
+              <div class="schedule-item-time">
+                <span class="time-value">${formatTime(item.startTime, tz)}</span>
+              </div>
+              <div class="schedule-item-label">${_esc(item.label)}</div>
+              ${item.endTime ? `<div style="font-size:13px;color:var(--text-tertiary)">${formatTime(item.endTime, tz)}</div>` : ''}
             </div>
-            <div class="schedule-item-label">${_esc(item.label)}</div>
-            ${item.endTime ? `<div style="font-size:13px;color:var(--text-tertiary)">${formatTime(item.endTime, tz)}</div>` : ''}
-          </div>
-        `;
+          `;
+        }
+      } else {
+        html += '<div class="card-body" style="color:var(--text-secondary)">No schedule items</div>';
       }
+      if (daysheet.notes) {
+        html += `<div class="daysheet-notes">${_esc(daysheet.notes)}</div>`;
+      }
+      html += '</div>';
     } else {
-      html += '<div class="card-body" style="color:var(--text-secondary)">No schedule items</div>';
+      html += '<div class="card"><div class="card-body empty-section-text">No day sheet yet</div></div>';
     }
-    if (daysheet.notes) {
-      html += `<div class="daysheet-notes">${_esc(daysheet.notes)}</div>`;
-    }
-    html += '</div>';
-  } else {
-    html += '<div class="card"><div class="card-body empty-section-text">No day sheet yet</div></div>';
   }
 
   // Setlist section
-  html += '<div class="section-subheader">SETLIST</div>';
-  if (setlist && setlist.entries.length > 0) {
-    const totalDuration = setlistService.getTotalDuration(setlist);
-    html += '<div class="card">';
+  if (_isModuleEnabled(tour, 'setlist')) {
+    html += '<div class="section-subheader">SETLIST</div>';
+    if (setlist && setlist.entries.length > 0) {
+      const totalDuration = setlistService.getTotalDuration(setlist);
+      html += '<div class="card">';
 
-    for (let i = 0; i < setlist.entries.length; i++) {
-      const entry = setlist.entries[i];
-      html += `
-        <div class="setlist-entry">
-          <span class="setlist-order">${i + 1}</span>
-          <div class="setlist-entry-content">
-            <div class="setlist-song-name">${_esc(entry.songName || '')}</div>
-            <div class="setlist-meta">
-              ${entry.duration ? `<span class="setlist-meta-item duration">${formatDuration(entry.duration)}</span>` : ''}
-              ${entry.bpm ? `<span class="setlist-meta-item">${entry.bpm} BPM</span>` : ''}
-              ${entry.key ? `<span class="setlist-meta-item">${_esc(entry.key)}</span>` : ''}
-              ${entry.timecode ? `<span class="smpte">${formatSMPTE(entry.timecode)}</span>` : ''}
+      for (let i = 0; i < setlist.entries.length; i++) {
+        const entry = setlist.entries[i];
+        html += `
+          <div class="setlist-entry">
+            <span class="setlist-order">${i + 1}</span>
+            <div class="setlist-entry-content">
+              <div class="setlist-song-name">${_esc(entry.songName || '')}</div>
+              <div class="setlist-meta">
+                ${entry.duration ? `<span class="setlist-meta-item duration">${formatDuration(entry.duration)}</span>` : ''}
+                ${entry.bpm ? `<span class="setlist-meta-item">${entry.bpm} BPM</span>` : ''}
+                ${entry.key ? `<span class="setlist-meta-item">${_esc(entry.key)}</span>` : ''}
+                ${entry.timecode ? `<span class="smpte">${formatSMPTE(entry.timecode)}</span>` : ''}
+              </div>
+              ${_renderRichNotes(entry)}
             </div>
-            ${_renderRichNotes(entry)}
           </div>
-        </div>
-      `;
-    }
+        `;
+      }
 
-    if (totalDuration > 0) {
-      html += `
-        <div class="setlist-total">
-          <span class="setlist-total-icon">&#128339;</span>
-          <span>${formatDurationHM(totalDuration)}</span>
-        </div>
-      `;
-    }
+      if (totalDuration > 0) {
+        html += `
+          <div class="setlist-total">
+            <span class="setlist-total-icon">&#128339;</span>
+            <span>${formatDurationHM(totalDuration)}</span>
+          </div>
+        `;
+      }
 
-    html += '</div>';
-  } else {
-    html += '<div class="card"><div class="card-body empty-section-text">No setlist yet</div></div>';
+      html += '</div>';
+    } else {
+      html += '<div class="card"><div class="card-body empty-section-text">No setlist yet</div></div>';
+    }
   }
 
   // Venue notes section
-  if (canView(role, 'venue')) {
+  if (_isModuleEnabled(tour, 'venue') && canView(role, 'venue')) {
     html += '<div class="section-subheader">VENUE INFO</div>';
     if (venueNote) {
       html += '<div class="card">';
@@ -239,54 +247,56 @@ function _render(container, event, daysheet, setlist, venueNote, tour, busSheets
   }
 
   // Bus Stock section
-  html += '<div class="section-subheader">BUS STOCK</div>';
-  if (busSheets.length > 0) {
-    html += '<div class="card">';
-    for (let i = 0; i < busSheets.length; i++) {
-      const { bus, sheet } = busSheets[i];
-      const requested = sheet ? sheet.items.filter(it => it.isChecked).length : 0;
-      const total = sheet ? sheet.items.length : 0;
-      const locked = sheet && busStockService.isSheetLocked(sheet);
-      html += `
-        <a class="busstock-link" href="#/busstock/${bus.id}" style="display:flex;align-items:center;padding:10px 16px;text-decoration:none;color:inherit">
-          <span style="flex:1;font-size:15px">${_esc(bus.name)}</span>
-          ${locked ? '<span style="color:var(--system-orange);font-size:13px;margin-right:8px">&#128274;</span>' : ''}
-          <span style="font-size:13px;color:var(--text-secondary);font-variant-numeric:tabular-nums">${requested}/${total}</span>
-          <span style="margin-left:8px;color:var(--text-tertiary);font-size:12px">&#8250;</span>
-        </a>
-      `;
-      if (i < busSheets.length - 1) {
-        html += '<div style="border-top:1px solid var(--separator);margin-left:16px"></div>';
+  if (_isModuleEnabled(tour, 'busstock')) {
+    html += '<div class="section-subheader">BUS STOCK</div>';
+    if (busSheets.length > 0) {
+      html += '<div class="card">';
+      for (let i = 0; i < busSheets.length; i++) {
+        const { bus, sheet } = busSheets[i];
+        const requested = sheet ? sheet.items.filter(it => it.isChecked).length : 0;
+        const total = sheet ? sheet.items.length : 0;
+        const locked = sheet && busStockService.isSheetLocked(sheet);
+        html += `
+          <a class="busstock-link" href="#/busstock/${bus.id}" style="display:flex;align-items:center;padding:10px 16px;text-decoration:none;color:inherit">
+            <span style="flex:1;font-size:15px">${_esc(bus.name)}</span>
+            ${locked ? '<span style="color:var(--system-orange);font-size:13px;margin-right:8px">&#128274;</span>' : ''}
+            <span style="font-size:13px;color:var(--text-secondary);font-variant-numeric:tabular-nums">${requested}/${total}</span>
+            <span style="margin-left:8px;color:var(--text-tertiary);font-size:12px">&#8250;</span>
+          </a>
+        `;
+        if (i < busSheets.length - 1) {
+          html += '<div style="border-top:1px solid var(--separator);margin-left:16px"></div>';
+        }
       }
+      html += '</div>';
+    } else {
+      html += '<div class="card"><div class="card-body empty-section-text">No bus stock yet</div></div>';
     }
-    html += '</div>';
-  } else {
-    html += '<div class="card"><div class="card-body empty-section-text">No bus stock yet</div></div>';
-  }
 
-  // Purchased Today section (receipts for event date)
-  if (busReceipts.length > 0) {
-    html += '<div class="section-subheader">PURCHASED TODAY</div>';
-    html += '<div class="card">';
-    for (let i = 0; i < busReceipts.length; i++) {
-      const { bus, receipt } = busReceipts[i];
-      const timeStr = receipt.purchasedAt ? new Date(receipt.purchasedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
-      html += `
-        <div style="padding:10px 16px${i < busReceipts.length - 1 ? ';border-bottom:1px solid var(--separator)' : ''}">
-          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
-            <span style="font-weight:500;font-size:15px">${_esc(bus.name)}</span>
-            <span style="font-size:13px;color:var(--text-secondary)">${timeStr}</span>
+    // Purchased Today section (receipts for event date)
+    if (busReceipts.length > 0) {
+      html += '<div class="section-subheader">PURCHASED TODAY</div>';
+      html += '<div class="card">';
+      for (let i = 0; i < busReceipts.length; i++) {
+        const { bus, receipt } = busReceipts[i];
+        const timeStr = receipt.purchasedAt ? new Date(receipt.purchasedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
+        html += `
+          <div style="padding:10px 16px${i < busReceipts.length - 1 ? ';border-bottom:1px solid var(--separator)' : ''}">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
+              <span style="font-weight:500;font-size:15px">${_esc(bus.name)}</span>
+              <span style="font-size:13px;color:var(--text-secondary)">${timeStr}</span>
+            </div>
+            <div style="font-size:13px;color:var(--text-secondary)">
+              ${receipt.items.length} items purchased
+            </div>
+            <div style="margin-top:4px;font-size:13px;color:var(--text-tertiary)">
+              ${receipt.items.slice(0, 3).map(it => _esc(it.name || it.displayName || '')).join(', ')}${receipt.items.length > 3 ? `, +${receipt.items.length - 3} more` : ''}
+            </div>
           </div>
-          <div style="font-size:13px;color:var(--text-secondary)">
-            ${receipt.items.length} items purchased
-          </div>
-          <div style="margin-top:4px;font-size:13px;color:var(--text-tertiary)">
-            ${receipt.items.slice(0, 3).map(it => _esc(it.name || it.displayName || '')).join(', ')}${receipt.items.length > 3 ? `, +${receipt.items.length - 3} more` : ''}
-          </div>
-        </div>
-      `;
+        `;
+      }
+      html += '</div>';
     }
-    html += '</div>';
   }
 
   // Event notes
