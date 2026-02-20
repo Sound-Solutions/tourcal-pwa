@@ -1,10 +1,11 @@
-// Travel Service - Geocoding (Nominatim) + Routing (OSRM), both free, no API key
+// Travel Service - Geocoding (Nominatim) + Routing (MapKit JS Directions)
 
 import { cache } from './cache.js';
 
 const NOMINATIM_BASE = 'https://nominatim.openstreetmap.org/search';
-const OSRM_BASE = 'https://router.project-osrm.org/route/v1/driving';
 const CACHE_TTL = 7 * 24 * 3600000; // 7 days
+
+const MAPKIT_TOKEN = 'eyJhbGciOiJFUzI1NiIsImtpZCI6Ilg4SkNNNUE2VDMiLCJ0eXAiOiJKV1QifQ.eyJpc3MiOiJNMjJYWDJDU0FZIiwiaWF0IjoxNzcxNTQ1NTk3LCJleHAiOjE4MDMwODE1OTcsIm9yaWdpbiI6Imh0dHBzOi8vc291bmQtc29sdXRpb25zLmdpdGh1Yi5pbyJ9.9HzCGXiTGAbRWPZU_fSiIUUkGCzWk3jhBPUpfsB1ZCCwzI4uWdRo2JZHbJ8cF7ww9_Ac_M5CbW5GFlWElDIapw';
 
 // 2-letter codes that overlap with US state abbreviations → country names
 const COUNTRY_CODE_MAP = {
@@ -16,6 +17,28 @@ const COUNTRY_CODE_MAP = {
   NC: 'New Caledonia', NE: 'Netherlands',
   PA: 'Panama',   SC: 'Seychelles', VA: 'Vatican City',
 };
+
+let _mapkitReady = false;
+let _mapkitInitPromise = null;
+
+function ensureMapKit() {
+  if (_mapkitReady) return Promise.resolve();
+  if (_mapkitInitPromise) return _mapkitInitPromise;
+
+  _mapkitInitPromise = new Promise((resolve, reject) => {
+    if (typeof mapkit === 'undefined') {
+      reject(new Error('MapKit JS not loaded'));
+      return;
+    }
+    mapkit.init({
+      authorizationCallback: (done) => done(MAPKIT_TOKEN)
+    });
+    _mapkitReady = true;
+    resolve();
+  });
+
+  return _mapkitInitPromise;
+}
 
 class TravelService {
   constructor() {
@@ -42,32 +65,44 @@ class TravelService {
   }
 
   /**
-   * Get driving route between two {lat, lon} points via OSRM.
+   * Get driving route between two {lat, lon} points via MapKit JS Directions.
    * Returns { distance (meters), duration (seconds) } or null.
    */
   async route(from, to) {
     if (!from || !to) return null;
 
-    const key = `route:${from.lat.toFixed(4)},${from.lon.toFixed(4)}-${to.lat.toFixed(4)},${to.lon.toFixed(4)}`;
+    const key = `route:mk:${from.lat.toFixed(4)},${from.lon.toFixed(4)}-${to.lat.toFixed(4)},${to.lon.toFixed(4)}`;
     const cached = await cache.get(key);
     if (cached) return cached;
 
     try {
-      const url = `${OSRM_BASE}/${from.lon},${from.lat};${to.lon},${to.lat}?overview=false`;
-      const res = await fetch(url);
-      const data = await res.json();
+      await ensureMapKit();
 
-      if (data.code === 'Ok' && data.routes?.[0]) {
-        const r = data.routes[0];
+      const directions = new mapkit.Directions();
+      const request = {
+        origin: new mapkit.Coordinate(from.lat, from.lon),
+        destination: new mapkit.Coordinate(to.lat, to.lon),
+        transportType: mapkit.Directions.Transport.Automobile
+      };
+
+      const response = await new Promise((resolve, reject) => {
+        directions.route(request, (error, data) => {
+          if (error) reject(error);
+          else resolve(data);
+        });
+      });
+
+      if (response.routes?.[0]) {
+        const r = response.routes[0];
         const result = {
-          distance: r.distance,  // meters
-          duration: r.duration   // seconds
+          distance: r.distance,                  // meters
+          duration: r.expectedTravelTime         // seconds
         };
         await cache.put(key, result, CACHE_TTL);
         return result;
       }
     } catch (e) {
-      console.warn('[TravelService] OSRM route failed:', e);
+      console.warn('[TravelService] MapKit directions failed:', e);
     }
     return null;
   }
@@ -84,7 +119,7 @@ class TravelService {
 
     if (!fromCoord || !toCoord) return null;
 
-    // Try OSRM driving route
+    // Try MapKit JS driving directions
     const routeData = await this.route(fromCoord, toCoord);
 
     if (routeData) {
