@@ -13,6 +13,7 @@ let _state = {
   buses: [],
   selectedBusId: sessionStorage.getItem(STORAGE_BUS_KEY) || null,
   sheet: null,
+  items: [],
   tour: null,
   showAddForm: false,
   receipts: [],
@@ -92,10 +93,41 @@ export async function renderBusStockSheetView({ busId }) {
 
 async function _loadSheet() {
   if (!_state.selectedBusId || !_state.tour) return;
+
+  // Fetch sheet (lock/notes) and items separately
   _state.sheet = await busStockService.fetchSheet(
     _state.tour,
     _state.selectedBusId
   );
+
+  _state.items = await busStockService.fetchItems(
+    _state.tour,
+    _state.selectedBusId
+  );
+
+  // One-time migration: if sheet has legacy items but no individual records exist
+  if (_state.sheet?._legacyItems?.length > 0 && _state.items.length === 0) {
+    console.log('[BusStock] Migrating legacy items to individual records...');
+    const legacyItems = _state.sheet._legacyItems.map((item, i) => ({
+      id: item.id || _uuid(),
+      name: item.name || '',
+      brand: item.brand || '',
+      size: item.size || '',
+      quantity: item.quantity || 1,
+      isChecked: item.isChecked || false,
+      isFromDefaults: item.isFromDefaults || false,
+      order: item.order ?? i,
+      createdBy: item.createdBy || ''
+    }));
+
+    try {
+      _state.items = await busStockService.saveItems(_state.tour, legacyItems, _state.selectedBusId);
+    } catch (e) {
+      console.warn('Migration failed, using legacy items in-memory:', e);
+      _state.items = legacyItems;
+    }
+  }
+
   // Also load recent receipts for this bus
   _state.receipts = await busStockService.fetchReceipts(
     _state.tour,
@@ -104,7 +136,7 @@ async function _loadSheet() {
 }
 
 function _render(container) {
-  const { buses, selectedBusId, sheet, tour, receipts } = _state;
+  const { buses, selectedBusId, sheet, items, tour, receipts } = _state;
   const role = tour.role;
   const locked = busStockService.isSheetLocked(sheet);
   const editable = canEditBusStock(role, locked, tour.permissionOverrides);
@@ -118,8 +150,8 @@ function _render(container) {
     return item.createdBy === currentUser;
   }
 
-  const requestedCount = sheet ? sheet.items.filter(i => i.isChecked).length : 0;
-  const totalCount = sheet ? sheet.items.length : 0;
+  const requestedCount = items.filter(i => i.isChecked).length;
+  const totalCount = items.length;
 
   let html = '<div class="busstock-view">';
 
@@ -142,14 +174,14 @@ function _render(container) {
   }
 
   // Stock items
-  if (sheet && sheet.items.length > 0) {
-    const groups = busStockService.groupByCategory(sheet.items);
+  if (items.length > 0) {
+    const groups = busStockService.groupByCategory(items);
 
-    for (const [category, items] of groups) {
+    for (const [category, catItems] of groups) {
       html += `<div class="stock-category-header">${_esc(category)}</div>`;
       html += '<div class="card">';
 
-      for (const item of items) {
+      for (const item of catItems) {
         const subtitleParts = [item.brand, item.size].filter(Boolean);
         if (isAdmin && item.createdBy) {
           const addedByText = item.createdBy === currentUser ? 'You' : item.createdBy.substring(0, 8) + '...';
@@ -180,7 +212,7 @@ function _render(container) {
       html += '</div>';
     }
 
-    if (sheet.notes) {
+    if (sheet?.notes) {
       html += `<div class="daysheet-notes" style="margin-top:12px">${_esc(sheet.notes)}</div>`;
     }
 
@@ -236,7 +268,7 @@ function _render(container) {
           </div>
         </div>
       `;
-    } else if (sheet) {
+    } else if (sheet || items.length > 0) {
       html += `
         <button class="btn btn-text" id="show-add-form" style="width:100%;margin-top:16px;padding:12px;border:1px dashed var(--separator);border-radius:10px;color:var(--system-blue)">
           + Add Item
@@ -315,8 +347,7 @@ function _bindEvents(container) {
       const action = el.dataset.action;
       const itemId = el.dataset.itemId;
 
-      if (!_state.sheet) return;
-      const item = _state.sheet.items.find(i => i.id === itemId);
+      const item = _state.items.find(i => i.id === itemId);
       if (!item) return;
 
       // Per-item purchase
@@ -325,12 +356,12 @@ function _bindEvents(container) {
         try {
           const bus = _state.buses.find(b => b.id === _state.selectedBusId);
           const result = await busStockService.purchaseItem(
-            _state.tour, bus, _state.sheet, item, authService.userRecordName
+            _state.tour, bus, _state.items, item, authService.userRecordName
           );
           if (result) {
-            _state.sheet = result.sheet;
+            _state.items = result.items;
             _state.receipts = await busStockService.fetchReceipts(_state.tour, _state.selectedBusId);
-            _state.showReceipts = true;  // Auto-expand receipts so user sees the purchase
+            _state.showReceipts = true;
             showToast(`Purchased "${item.name}"`);
             _render(container);
           }
@@ -341,6 +372,7 @@ function _bindEvents(container) {
         return;
       }
 
+      // Toggle, inc, dec, delete — each saves a single item record
       if (action === 'toggle') {
         item.isChecked = !item.isChecked;
       } else if (action === 'inc') {
@@ -349,12 +381,31 @@ function _bindEvents(container) {
         item.quantity = Math.max(0, (item.quantity || 0) - 1);
       } else if (action === 'delete') {
         if (!confirm(`Remove "${item.name}" from the list?`)) return;
-        _state.sheet.items = _state.sheet.items.filter(i => i.id !== itemId);
+        try {
+          await busStockService.deleteItem(_state.tour, itemId, item.recordChangeTag);
+          _state.items = _state.items.filter(i => i.id !== itemId);
+          // Reorder remaining
+          _state.items.forEach((it, i) => { it.order = i; });
+          if (_state.items.length > 0) {
+            await busStockService.saveItems(_state.tour, _state.items, _state.selectedBusId);
+          }
+          _render(container);
+          showToast(`Removed "${item.name}"`);
+        } catch (err) {
+          showToast('Failed to remove item', 'error');
+          console.error('Delete error:', err);
+        }
+        return;
       }
 
+      // Save the single modified item
       try {
-        const saved = await busStockService.saveSheet(_state.tour, _state.sheet);
-        _state.sheet.recordChangeTag = saved.recordChangeTag;
+        const saved = await busStockService.saveItem(_state.tour, item, _state.selectedBusId);
+        // Update in-memory with server recordChangeTag
+        const idx = _state.items.findIndex(i => i.id === itemId);
+        if (idx >= 0) {
+          _state.items[idx].recordChangeTag = saved.recordChangeTag;
+        }
         _render(container);
       } catch (err) {
         showToast('Failed to save changes', 'error');
@@ -367,13 +418,12 @@ function _bindEvents(container) {
   container.querySelector('#clear-requests-btn')?.addEventListener('click', async () => {
     if (!confirm('Clear all requests? Items will remain on the list but none will be marked for purchase.')) return;
 
-    for (const item of _state.sheet.items) {
+    for (const item of _state.items) {
       item.isChecked = false;
     }
 
     try {
-      const saved = await busStockService.saveSheet(_state.tour, _state.sheet);
-      _state.sheet.recordChangeTag = saved.recordChangeTag;
+      await busStockService.saveItems(_state.tour, _state.items, _state.selectedBusId);
       _render(container);
       showToast('All requests cleared');
     } catch (err) {
@@ -390,7 +440,7 @@ function _bindEvents(container) {
 
   // Create empty sheet
   container.querySelector('#create-sheet-btn')?.addEventListener('click', async () => {
-    await _createSheet([]);
+    await _createSheet();
     _render(container);
   });
 
@@ -398,7 +448,7 @@ function _bindEvents(container) {
   container.querySelector('#create-from-defaults-btn')?.addEventListener('click', async () => {
     try {
       const defaults = await busStockService.fetchDefaults(_state.tour, _state.selectedBusId);
-      const items = defaults?.items?.map((item, i) => ({
+      const defaultItems = defaults?.items?.map((item, i) => ({
         id: _uuid(),
         name: item.name || item.displayName || 'Item',
         brand: item.brand || '',
@@ -409,13 +459,18 @@ function _bindEvents(container) {
         order: i,
         createdBy: authService.userRecordName || null
       })) || [];
-      await _createSheet(items);
-      _render(container);
-      if (items.length > 0) {
-        showToast(`Loaded ${items.length} items from defaults`);
+
+      // Create the sheet (lock/notes)
+      await _createSheet();
+
+      // Save items as individual records
+      if (defaultItems.length > 0) {
+        _state.items = await busStockService.saveItems(_state.tour, defaultItems, _state.selectedBusId);
+        showToast(`Loaded ${defaultItems.length} items from defaults`);
       } else {
         showToast('No defaults found for this bus');
       }
+      _render(container);
     } catch (err) {
       showToast('Failed to load defaults', 'error');
       console.error('Defaults error:', err);
@@ -450,11 +505,10 @@ function _bindEvents(container) {
   });
 }
 
-async function _createSheet(items) {
+async function _createSheet() {
   const sheet = {
     busID: _state.selectedBusId,
     tourID: _state.tour.recordName,
-    items,
     notes: '',
     isLocked: false
   };
@@ -495,24 +549,23 @@ async function _addItem(container) {
     quantity,
     isChecked: true,  // new items default to requested
     isFromDefaults: false,
-    order: _state.sheet ? _state.sheet.items.length : 0,
+    order: _state.items.length,
     createdBy: authService.userRecordName || null
   };
 
   // Create sheet if it doesn't exist
   if (!_state.sheet) {
-    await _createSheet([newItem]);
-  } else {
-    _state.sheet.items.push(newItem);
-    try {
-      const saved = await busStockService.saveSheet(_state.tour, _state.sheet);
-      _state.sheet.recordChangeTag = saved.recordChangeTag;
-    } catch (err) {
-      showToast('Failed to add item', 'error');
-      console.error('Add item error:', err);
-      _state.sheet.items.pop(); // rollback
-      return;
-    }
+    await _createSheet();
+  }
+
+  // Save the single item record
+  try {
+    const saved = await busStockService.saveItem(_state.tour, newItem, _state.selectedBusId);
+    _state.items.push(saved);
+  } catch (err) {
+    showToast('Failed to add item', 'error');
+    console.error('Add item error:', err);
+    return;
   }
 
   // Add to defaults if requested

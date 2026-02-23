@@ -1,8 +1,9 @@
-// Bus Stock Service - Buses, persistent sheets, defaults, receipts (REST API)
+// Bus Stock Service - Buses, persistent sheets (lock/notes), individual item records, defaults, receipts (REST API)
 
 import { tourService } from './tour-service.js';
 import { cache } from './cache.js';
-import { queryRecords, lookupRecord, saveRecord, tourFilter, stringFilter } from './cloudkit-api.js';
+import { queryRecords, lookupRecord, saveRecord, deleteRecord, stringFilter } from './cloudkit-api.js';
+import { authService } from './auth.js';
 
 class BusStockService {
   async fetchBuses(tour) {
@@ -27,6 +28,8 @@ class BusStockService {
     }
   }
 
+  // --- Sheet (lock/notes/schedule only) ---
+
   async fetchSheet(tour, busId) {
     if (!tour || !busId) return null;
 
@@ -43,28 +46,13 @@ class BusStockService {
     return null;
   }
 
-  async fetchDefaults(tour, busId) {
-    if (!tour || !busId) return null;
-
-    try {
-      const record = await lookupRecord(tour, `defaults-${busId}`);
-      if (record && !record.serverErrorCode) {
-        return this._parseDefaults(record);
-      }
-    } catch (e) {
-      // Defaults may not exist
-    }
-    return null;
-  }
-
   async saveSheet(tour, sheet) {
     const fields = {
       busID: { value: sheet.busID },
       tourID: { value: sheet.tourID || tour.recordName },
       notes: { value: sheet.notes || '' },
       isLocked: { value: sheet.isLocked ? 1 : 0 },
-      lastUpdated: { value: Date.now() },
-      itemsJSON: { value: JSON.stringify(sheet.items || []) }
+      lastUpdated: { value: Date.now() }
     };
 
     if (sheet.isLocked) {
@@ -88,6 +76,89 @@ class BusStockService {
 
     const saved = await saveRecord(tour, record);
     return this._parseSheet(saved);
+  }
+
+  // --- Individual Item Records ---
+
+  async fetchItems(tour, busId) {
+    if (!tour || !busId) return [];
+
+    try {
+      const records = await queryRecords(tour, 'BusStockItem', {
+        filterBy: [stringFilter('busID', busId)],
+        sortBy: [{ fieldName: 'order', ascending: true }]
+      });
+
+      return records
+        .filter(r => !r.serverErrorCode)
+        .map(r => this._parseItem(r));
+    } catch (e) {
+      console.warn('Error fetching items for bus:', busId, e);
+      return [];
+    }
+  }
+
+  async saveItem(tour, item, busId) {
+    const fields = {
+      busID: { value: busId },
+      tourID: { value: tour.recordName },
+      name: { value: item.name || '' },
+      brand: { value: item.brand || '' },
+      size: { value: item.size || '' },
+      quantity: { value: item.quantity || 1 },
+      isChecked: { value: item.isChecked ? 1 : 0 },
+      isFromDefaults: { value: item.isFromDefaults ? 1 : 0 },
+      order: { value: item.order || 0 },
+      createdBy: { value: item.createdBy || '' },
+      lastUpdated: { value: Date.now() }
+    };
+
+    const record = {
+      recordType: 'BusStockItem',
+      recordName: item.id,
+      fields
+    };
+
+    if (item.recordChangeTag) {
+      record.recordChangeTag = item.recordChangeTag;
+    }
+
+    const saved = await saveRecord(tour, record);
+    return this._parseItem(saved);
+  }
+
+  async deleteItem(tour, itemId, recordChangeTag) {
+    await deleteRecord(tour, itemId, recordChangeTag);
+  }
+
+  async saveItems(tour, items, busId) {
+    // Batch save via sequential calls (CloudKit REST doesn't support multi-op easily from our helper)
+    const results = [];
+    for (const item of items) {
+      try {
+        const saved = await this.saveItem(tour, item, busId);
+        results.push(saved);
+      } catch (e) {
+        console.warn('Failed to save item:', item.id, e);
+      }
+    }
+    return results;
+  }
+
+  // --- Defaults ---
+
+  async fetchDefaults(tour, busId) {
+    if (!tour || !busId) return null;
+
+    try {
+      const record = await lookupRecord(tour, `defaults-${busId}`);
+      if (record && !record.serverErrorCode) {
+        return this._parseDefaults(record);
+      }
+    } catch (e) {
+      // Defaults may not exist
+    }
+    return null;
   }
 
   async saveDefaults(tour, busId, items) {
@@ -206,7 +277,7 @@ class BusStockService {
     return this._parseReceipt(saved);
   }
 
-  async purchaseItem(tour, bus, sheet, item, userRecordName) {
+  async purchaseItem(tour, bus, items, item, userRecordName) {
     const dateStr = this._formatDate(new Date());
     const receiptKey = `receipt-${bus.id}-${dateStr}`;
 
@@ -236,21 +307,27 @@ class BusStockService {
     receipt.purchasedAt = new Date();
     const savedReceipt = await this.saveReceipt(tour, receipt);
 
-    // Clone sheet items before mutating (don't corrupt _state.sheet on failure)
-    const updatedItems = sheet.items.map(i => ({ ...i }));
+    // Update individual item record
+    let updatedItems = items.map(i => ({ ...i }));
     if (item.isFromDefaults) {
+      // Default item: reset to unrequested
       const idx = updatedItems.findIndex(i => i.id === item.id);
-      if (idx >= 0) updatedItems[idx].isChecked = false;
+      if (idx >= 0) {
+        updatedItems[idx].isChecked = false;
+        await this.saveItem(tour, updatedItems[idx], bus.id);
+      }
     } else {
-      const filtered = updatedItems.filter(i => i.id !== item.id);
-      updatedItems.length = 0;
-      updatedItems.push(...filtered);
+      // Non-default item: delete the record
+      await this.deleteItem(tour, item.id, item.recordChangeTag);
+      updatedItems = updatedItems.filter(i => i.id !== item.id);
+      // Reorder remaining
+      updatedItems.forEach((it, i) => { it.order = i; });
+      if (updatedItems.length > 0) {
+        await this.saveItems(tour, updatedItems, bus.id);
+      }
     }
 
-    const sheetCopy = { ...sheet, items: updatedItems };
-    const savedSheet = await this.saveSheet(tour, sheetCopy);
-
-    return { receipt: savedReceipt, sheet: savedSheet };
+    return { receipt: savedReceipt, items: updatedItems };
   }
 
   isSheetLocked(sheet) {
@@ -305,14 +382,15 @@ class BusStockService {
   _parseSheet(record) {
     const f = record.fields || {};
 
-    let items = [];
-    if (f.itemsJSON?.value) {
-      try { items = JSON.parse(f.itemsJSON.value); } catch (e) {}
-    }
-
     let lockSchedule = null;
     if (f.lockScheduleJSON?.value) {
       try { lockSchedule = JSON.parse(f.lockScheduleJSON.value); } catch (e) {}
+    }
+
+    // Check for legacy itemsJSON (for migration)
+    let legacyItems = null;
+    if (f.itemsJSON?.value) {
+      try { legacyItems = JSON.parse(f.itemsJSON.value); } catch (e) {}
     }
 
     return {
@@ -320,12 +398,32 @@ class BusStockService {
       recordChangeTag: record.recordChangeTag,
       busID: f.busID?.value || '',
       tourID: f.tourID?.value || '',
-      items,
       notes: f.notes?.value || '',
       isLocked: (f.isLocked?.value || 0) === 1,
       lockedAt: f.lockedAt?.value ? new Date(f.lockedAt.value) : null,
       lockedBy: f.lockedBy?.value || '',
       lockSchedule,
+      lastUpdated: f.lastUpdated?.value ? new Date(f.lastUpdated.value) : null,
+      _legacyItems: legacyItems  // exposed for one-time migration
+    };
+  }
+
+  _parseItem(record) {
+    const f = record.fields || {};
+    return {
+      recordName: record.recordName,
+      recordChangeTag: record.recordChangeTag,
+      id: record.recordName,
+      busID: f.busID?.value || '',
+      tourID: f.tourID?.value || '',
+      name: f.name?.value || '',
+      brand: f.brand?.value || '',
+      size: f.size?.value || '',
+      quantity: f.quantity?.value || 1,
+      isChecked: (f.isChecked?.value || 0) === 1,
+      isFromDefaults: (f.isFromDefaults?.value || 0) === 1,
+      order: f.order?.value || 0,
+      createdBy: f.createdBy?.value || '',
       lastUpdated: f.lastUpdated?.value ? new Date(f.lastUpdated.value) : null
     };
   }
