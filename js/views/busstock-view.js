@@ -128,11 +128,16 @@ async function _loadSheet() {
     }
   }
 
-  // Also load recent receipts for this bus
-  _state.receipts = await busStockService.fetchReceipts(
+  // Also load recent receipts for this bus (last 24 hours only)
+  const allReceipts = await busStockService.fetchReceipts(
     _state.tour,
     _state.selectedBusId
   );
+  const cutoff = Date.now() - 24 * 60 * 60 * 1000;
+  _state.receipts = allReceipts.filter(r => {
+    const t = r.purchasedAt ? new Date(r.purchasedAt).getTime() : 0;
+    return t > cutoff;
+  });
 }
 
 function _render(container) {
@@ -187,8 +192,8 @@ function _render(container) {
           const addedByText = item.createdBy === currentUser ? 'You' : item.createdBy.substring(0, 8) + '...';
           subtitleParts.push(`Added by ${addedByText}`);
         }
-        if (!item.isFromDefaults) {
-          subtitleParts.push('One-off');
+        if (!item.isFromDefaults && item.createdBy) {
+          subtitleParts.push('Added');
         }
         const subtitle = subtitleParts.join(' \u00b7 ');
         html += `
