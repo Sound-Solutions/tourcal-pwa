@@ -365,7 +365,12 @@ function _bindEvents(container) {
           );
           if (result) {
             _state.items = result.items;
-            _state.receipts = await busStockService.fetchReceipts(_state.tour, _state.selectedBusId);
+            const allReceipts = await busStockService.fetchReceipts(_state.tour, _state.selectedBusId);
+            const cutoff = Date.now() - 24 * 60 * 60 * 1000;
+            _state.receipts = allReceipts.filter(r => {
+              const t = r.purchasedAt ? new Date(r.purchasedAt).getTime() : 0;
+              return t > cutoff;
+            });
             _state.showReceipts = true;
             showToast(`Purchased "${item.name}"`);
             _render(container);
