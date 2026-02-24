@@ -130,18 +130,35 @@ function _render(container, event, daysheet, setlist, venueNote, tour, busSheets
     </div>
   `;
 
-  // Location section with Maps links
-  if (event.venue || event.city) {
-    const query = encodeURIComponent([event.venue, event.city].filter(Boolean).join(', '));
+  // Location section — tap name to search, tap arrow for directions
+  if (event.venue || event.city || event.hotel) {
     html += '<div class="section-subheader">LOCATION</div>';
     html += '<div class="card">';
-    html += `<div class="card-body">
-      <div style="font-size:15px;margin-bottom:10px">${_esc(event.venue || '')}${event.city ? (event.venue ? ', ' : '') + _esc(event.city) : ''}</div>
-      <div class="maps-buttons">
-        <a href="https://maps.apple.com/?q=${query}" target="_blank" class="btn btn-sm btn-secondary maps-btn">Apple Maps</a>
-        <a href="https://www.google.com/maps/search/?api=1&query=${query}" target="_blank" class="btn btn-sm btn-secondary maps-btn">Google Maps</a>
-      </div>
-    </div>`;
+
+    const _locRow = (icon, name, query) => {
+      const searchUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(query)}`;
+      const dirUrl = `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(query)}`;
+      return `<div style="display:flex;align-items:center;padding:10px 12px">
+        <span style="width:24px;text-align:center;color:var(--text-secondary);font-size:14px">${icon}</span>
+        <a href="${searchUrl}" target="_blank" style="flex:1;font-size:15px;color:var(--text-primary);text-decoration:none;margin-left:8px">${_esc(name)}</a>
+        <a href="${dirUrl}" target="_blank" style="color:var(--system-blue);font-size:16px;padding:4px 4px 4px 8px;text-decoration:none" title="Directions">&#9670;</a>
+      </div>`;
+    };
+
+    if (event.venue) {
+      const venueQuery = [event.venue, event.city].filter(Boolean).join(', ');
+      html += _locRow('&#127970;', event.venue, venueQuery);
+    }
+    if (event.city) {
+      if (event.venue) html += '<div style="border-top:1px solid var(--separator);margin-left:44px"></div>';
+      html += _locRow('&#128205;', event.city, event.city);
+    }
+    if (event.hotel) {
+      if (event.venue || event.city) html += '<div style="border-top:1px solid var(--separator);margin-left:44px"></div>';
+      const hotelQuery = [event.hotel, event.city].filter(Boolean).join(', ');
+      html += _locRow('&#128716;', event.hotel, hotelQuery);
+    }
+
     html += '</div>';
   }
 
