@@ -62,9 +62,13 @@ export async function renderEventDetailView({ id }) {
     const busSheets = [];
     let busReceipts = [];
     if (buses.length > 0) {
-      const sheetPromises = buses.map(bus =>
-        busStockService.fetchSheet(tour, bus.id).then(sheet => ({ bus, sheet }))
-      );
+      const sheetPromises = buses.map(async bus => {
+        const [sheet, items] = await Promise.all([
+          busStockService.fetchSheet(tour, bus.id),
+          busStockService.fetchItems(tour, bus.id)
+        ]);
+        return { bus, sheet, items };
+      });
       busSheets.push(...await Promise.all(sheetPromises));
       busReceipts = await busStockService.fetchAllReceiptsForDate(tour, buses, eventDate);
     }
@@ -252,9 +256,9 @@ function _render(container, event, daysheet, setlist, venueNote, tour, busSheets
     if (busSheets.length > 0) {
       html += '<div class="card">';
       for (let i = 0; i < busSheets.length; i++) {
-        const { bus, sheet } = busSheets[i];
-        const requested = sheet ? sheet.items.filter(it => it.isChecked).length : 0;
-        const total = sheet ? sheet.items.length : 0;
+        const { bus, sheet, items = [] } = busSheets[i];
+        const requested = items.filter(it => it.isChecked).length;
+        const total = items.length;
         const locked = sheet && busStockService.isSheetLocked(sheet);
         html += `
           <a class="busstock-link" href="#/busstock/${bus.id}" style="display:flex;align-items:center;padding:10px 16px;text-decoration:none;color:inherit">
