@@ -104,7 +104,7 @@ function _render(container, events, tour) {
 
     for (const event of dayEvents) {
       const tz = event.timeZoneIdentifier;
-      const timeStr = event.startDate ? formatTime(event.startDate, tz) : '';
+      const timeStr = event.isAllDay ? 'All day' : (event.startDate ? formatTime(event.startDate, tz) : '');
 
       html += `
         <div class="event-card" data-event-id="${event.recordName}">

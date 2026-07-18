@@ -41,6 +41,7 @@ class EventService {
       notes: { value: event.notes || '' },
       timeZoneIdentifier: { value: event.timeZoneIdentifier || '' },
       isArtistOnly: { value: event.isArtistOnly ? 1 : 0 },
+      isAllDay: { value: event.isAllDay ? 1 : 0 },
       updatedAt: { value: Date.now() }
     };
 
@@ -87,6 +88,7 @@ class EventService {
       notes: f.notes?.value || '',
       timeZoneIdentifier: f.timeZoneIdentifier?.value || '',
       isArtistOnly: (f.isArtistOnly?.value || 0) === 1,
+      isAllDay: (f.isAllDay?.value || 0) === 1,
       artistID: f.artistID?.value || '',
       createdAt: f.createdAt?.value ? new Date(f.createdAt.value) : null,
       updatedAt: f.updatedAt?.value ? new Date(f.updatedAt.value) : null,
