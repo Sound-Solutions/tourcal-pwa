@@ -46,7 +46,7 @@ function _render(container, tours) {
     const hasErrors = errors.length > 0;
     container.innerHTML = `
       <div class="empty-state">
-        <div class="empty-state-icon">${hasErrors ? '&#9888;' : '&#127926;'}</div>
+        ${hasErrors ? '<div class="empty-state-icon">&#9888;</div>' : ''}
         <h2 class="empty-state-title">${hasErrors ? 'Could Not Load Tours' : 'No Tours'}</h2>
         <p class="empty-state-text">${hasErrors
           ? 'There was a problem connecting to iCloud. This often resolves with a retry.'
