@@ -113,7 +113,7 @@ function _render(container, event, daysheet, setlist, venueNote, tour, busSheets
   `;
 
   // Location section — tap name to search, tap arrow for directions
-  if (event.venue || event.city || event.hotel) {
+  if (event.venue || event.city || event.hotel || event.overnightStop) {
     html += '<div class="section-subheader">LOCATION</div>';
     html += '<div class="card">';
 
@@ -139,6 +139,10 @@ function _render(container, event, daysheet, setlist, venueNote, tour, busSheets
       if (event.venue || event.city) html += '<div style="border-top:1px solid var(--separator);margin-left:44px"></div>';
       const hotelQuery = [event.hotel, event.city].filter(Boolean).join(', ');
       html += _locRow('&#128716;', event.hotel, hotelQuery);
+    }
+    if (event.overnightStop) {
+      if (event.venue || event.city || event.hotel) html += '<div style="border-top:1px solid var(--separator);margin-left:44px"></div>';
+      html += _locRow('&#127756;', event.overnightStop, event.overnightStop);
     }
 
     html += '</div>';
