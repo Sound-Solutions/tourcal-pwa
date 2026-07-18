@@ -16,11 +16,14 @@
   <link rel="stylesheet" href="css/main.css">
   <link rel="stylesheet" href="css/components.css">
   <link rel="stylesheet" href="css/views.css">
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="anonymous">
 
+  <link rel="preconnect" href="https://api.apple-cloudkit.com">
+  <link rel="preconnect" href="https://cdn.apple-cloudkit.com">
+  <!-- defer: maps are only needed on the route view — never block first paint -->
   <script src="https://cdn.apple-cloudkit.com/ck/2/cloudkit.js" async></script>
-  <script src="https://cdn.apple-mapkit.com/mk/5.x.x/mapkit.js" crossorigin></script>
-  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="https://cdn.apple-mapkit.com/mk/5.x.x/mapkit.js" crossorigin defer></script>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin="anonymous" defer></script>
 </head>
 <body>
   <div id="app">
