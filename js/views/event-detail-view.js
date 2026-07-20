@@ -162,7 +162,7 @@ function _render(container, event, daysheet, setlist, venueNote, tour, busSheets
               <div class="schedule-item-time">
                 <span class="time-value">${formatTime(item.startTime, tz)}</span>
               </div>
-              <div class="schedule-item-label">${_esc(item.label)}</div>
+              <div class="schedule-item-label">${_linkifyAddresses(item.label)}</div>
               ${item.endTime ? `<div style="font-size:13px;color:var(--text-tertiary)">${formatTime(item.endTime, tz)}</div>` : ''}
             </div>
           `;
@@ -171,7 +171,7 @@ function _render(container, event, daysheet, setlist, venueNote, tour, busSheets
         html += '<div class="card-body" style="color:var(--text-secondary)">No schedule items</div>';
       }
       if (daysheet.notes) {
-        html += `<div class="daysheet-notes">${_esc(daysheet.notes)}</div>`;
+        html += `<div class="daysheet-notes">${_linkifyAddresses(daysheet.notes)}</div>`;
       }
       html += '</div>';
     } else {
@@ -351,5 +351,31 @@ function _esc(str) {
   const div = document.createElement('div');
   div.textContent = str;
   return div.innerHTML;
+}
+
+// Street addresses in day sheet text (e.g. "drive to 123 Main St, Louisville, KY")
+// become links opening driving directions, matching the iOS app.
+const _STREET_TYPES = 'Street|Avenue|Boulevard|Drive|Road|Lane|Court|Place|Parkway|Highway|Circle|Terrace|Trail|Pike|Square|Row|Alley|Loop|Plaza|Crossing|Way|St|Ave|Blvd|Dr|Rd|Ln|Ct|Pl|Pkwy|Hwy|Cir|Ter|Trl|Sq|Xing';
+const _ADDRESS_RE = new RegExp(
+  '\\b\\d{1,6}\\s+(?:[A-Za-z0-9\'.-]+\\s+){0,4}?(?:' + _STREET_TYPES + ')\\b\\.?' +
+  '(?:,\\s*[A-Za-z \'.-]{2,30}?,\\s*[A-Za-z]{2}\\b(?:\\s+\\d{5}(?:-\\d{4})?)?)?',
+  'gi'
+);
+
+function _linkifyAddresses(str) {
+  if (!str) return '';
+  let html = '';
+  let cursor = 0;
+  _ADDRESS_RE.lastIndex = 0;
+  let m;
+  while ((m = _ADDRESS_RE.exec(str)) !== null) {
+    html += _esc(str.slice(cursor, m.index));
+    const address = m[0];
+    const dirUrl = `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(address)}`;
+    html += `<a href="${dirUrl}" target="_blank" style="color:var(--system-blue);text-decoration:underline">${_esc(address)}</a>`;
+    cursor = m.index + address.length;
+  }
+  html += _esc(str.slice(cursor));
+  return html;
 }
 
